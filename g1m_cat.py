@@ -218,7 +218,8 @@ class CIV:
     def poner_freq(self, hz):
         return self._ordena(b"\x05" + freq_a_bcd(hz))
 
-    def poner_modo(self, nombre, filtro=None):
+    def poner_modo(self, nombre, filtro=1):
+        # El G1M rechaza (FA) el comando 06 sin el byte de filtro: siempre se manda.
         cuerpo = bytes([0x06, MODOS_POR_NOMBRE[nombre]])
         if filtro is not None:
             cuerpo += bytes([filtro])
@@ -277,7 +278,7 @@ class RadioSimulado:
         if c[:1] == b"\x05" and len(c) == 6:
             self.freq = bcd_a_freq(c[1:])
             return bytes([OK])
-        if c[:1] == b"\x06" and len(c) >= 2:
+        if c[:1] == b"\x06" and len(c) == 3:
             self.modo = c[1]
             return bytes([OK])
         if c == b"\x14\x0A":
@@ -413,8 +414,8 @@ def cmd_sondear(args):
             informe["escrituras"]["poner_frecuencia_05"] = resultado(civ.poner_freq(f))
         modo, filtro = civ.leer_modo()
         if modo in MODOS_POR_NOMBRE:
-            informe["escrituras"]["poner_modo_06"] = resultado(civ.poner_modo(modo))
-            informe["escrituras"]["poner_modo_con_filtro_06"] = resultado(civ.poner_modo(modo, filtro))
+            informe["escrituras"]["poner_modo_06"] = resultado(civ.poner_modo(modo, None))
+            informe["escrituras"]["poner_modo_con_filtro_06"] = resultado(civ.poner_modo(modo, filtro or 1))
         p = civ.leer_nivel(0x0A)
         if p is not None:
             informe["escrituras"]["poner_potencia_14_0A"] = resultado(civ.poner_nivel(0x0A, p))
@@ -450,7 +451,14 @@ def cmd_portadora(args):
         return
 
     puerto, civ = conectar(args)
-    original = (civ.leer_freq(), civ.leer_modo()[0], civ.leer_nivel(0x0A))
+    modo_orig, filtro_orig = civ.leer_modo()
+    original = (civ.leer_freq(), modo_orig, civ.leer_nivel(0x0A))
+    # En el G1M V1.07 los medidores 15 11 (Po) y 15 12 (ROE) devuelven un valor
+    # fijo aunque no transmita: si en recepción Po no es 0, no son medidas reales.
+    po_rx = civ.leer_medidor(0x11)
+    if po_rx:
+        print(f"Aviso: el medidor Po marca {po_rx} sin transmitir; el radio no da medidas "
+              "reales por CAT. Mide la potencia con un wattímetro externo.")
     resultados = []
     try:
         print(f"Modo {args.modo}: {resultado(civ.poner_modo(args.modo))}")
@@ -481,7 +489,7 @@ def cmd_portadora(args):
         if original[0]:
             civ.poner_freq(original[0])
         if original[1] in MODOS_POR_NOMBRE:
-            civ.poner_modo(original[1])
+            civ.poner_modo(original[1], filtro_orig or 1)
         if original[2] is not None and args.potencia is not None:
             civ.poner_nivel(0x0A, original[2])
         print(f"PTT apagado; estado original restaurado. PTT ahora: {civ.leer_ptt()}")
