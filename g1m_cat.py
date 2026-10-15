@@ -240,6 +240,34 @@ class CIV:
         return self._ordena(bytes([0x1C, 0x00, 0x01 if encendido else 0x00]))
 
 
+def buscar_radio(nombre, preferido=None, espera=0.25):
+    """Prueba velocidades y direcciones CI-V hasta que el radio conteste.
+    Devuelve (puerto, civ, frecuencia, baudios, direccion) o None.
+    `preferido` = (baudios, direccion) que se prueba primero (la última que funcionó)."""
+    combinaciones = [(b, d) for b in BAUDIOS for d in DIRECCIONES]
+    if preferido in combinaciones:
+        combinaciones.remove(preferido)
+        combinaciones.insert(0, preferido)
+    puerto, baud_abierto = None, None
+    try:
+        for b, d in combinaciones:
+            if b != baud_abierto:
+                if puerto:
+                    puerto.close()
+                puerto, baud_abierto = abrir_puerto(nombre, b), b
+            civ = CIV(puerto, d, espera=espera)
+            f = civ.leer_freq()
+            if f:
+                return puerto, civ, f, b, d
+    except Exception:
+        if puerto:
+            puerto.close()
+        raise
+    if puerto:
+        puerto.close()
+    return None
+
+
 # ----------------------------------------------------------------------------
 # Radio simulado (para probar el programa sin el equipo)
 # ----------------------------------------------------------------------------

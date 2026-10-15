@@ -4,9 +4,10 @@ Panel de control del Xiegu G1M por CAT (CI-V) con ventana.
 
 Necesita g1m_cat.py en la misma carpeta y pyserial.
 
-    python g1m_control.py                 (elige el puerto en la ventana)
-    python g1m_control.py --puerto COM6   (conecta directamente)
-    python g1m_control.py --puerto SIM    (radio simulado, sin equipo)
+    python g1m_control.py
+
+Solo hay que elegir el puerto en la lista y pulsar Conectar: la velocidad y la
+dirección CI-V se detectan solas y se recuerdan para la próxima vez.
 
 Sintonía:
   - Rueda del ratón sobre un dígito de la frecuencia: cambia ese dígito.
@@ -55,7 +56,9 @@ INTERRUPTORES = [
     ("Break-in CW", b"\x16\x47", 0x01),
 ]
 
-ARCHIVO_MEMORIAS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "g1m_memorias.json")
+CARPETA = os.path.dirname(os.path.abspath(__file__))
+ARCHIVO_MEMORIAS = os.path.join(CARPETA, "g1m_memorias.json")
+ARCHIVO_CONFIG = os.path.join(CARPETA, "g1m_config.json")
 
 C_FONDO = "#15171c"
 C_PANEL = "#1f232b"
@@ -207,17 +210,11 @@ class Panel:
         barra = ttk.Frame(r, padding=6)
         barra.grid(row=0, column=0, sticky="ew")
         ttk.Label(barra, text="Puerto").pack(side="left")
-        self.var_puerto = tk.StringVar(value="COM6")
-        self.cb_puerto = ttk.Combobox(barra, textvariable=self.var_puerto, width=10,
-                                      values=self._listar_puertos())
+        self.var_puerto = tk.StringVar()
+        self.cb_puerto = ttk.Combobox(barra, textvariable=self.var_puerto, width=38, state="readonly")
         self.cb_puerto.pack(side="left", padx=4)
-        ttk.Label(barra, text="Baudios").pack(side="left")
-        self.var_baudios = tk.StringVar(value=str(self.args.baudios))
-        ttk.Combobox(barra, textvariable=self.var_baudios, width=7,
-                     values=[str(b) for b in cat.BAUDIOS]).pack(side="left", padx=4)
-        ttk.Label(barra, text="Dir. CI-V").pack(side="left")
-        self.var_dir = tk.StringVar(value=f"0x{self.args.dir:02X}")
-        ttk.Entry(barra, textvariable=self.var_dir, width=6).pack(side="left", padx=4)
+        ttk.Button(barra, text="↻", width=3, command=self._refrescar_puertos).pack(side="left")
+        self._refrescar_puertos()
         self.bt_conectar = ttk.Button(barra, text="Conectar", command=self.conectar)
         self.bt_conectar.pack(side="left", padx=6)
         self.lb_estado = ttk.Label(barra, text="Desconectado", foreground="#ff8080")
@@ -439,12 +436,34 @@ class Panel:
         self._mem_refrescar()
 
     # --- utilidades ---
-    def _listar_puertos(self):
+    def _refrescar_puertos(self):
+        """Lista los puertos con su descripción; el último usado queda elegido."""
+        self.puertos = {}
         try:
             from serial.tools import list_ports
-            return [p.device for p in list_ports.comports()] + ["SIM"]
+            for p in sorted(list_ports.comports(), key=lambda p: p.device):
+                self.puertos[f"{p.device}  –  {p.description}"] = p.device
         except Exception:
-            return ["SIM"]
+            pass
+        self.puertos["SIM  –  radio simulado (sin equipo)"] = "SIM"
+        nombres = list(self.puertos)
+        self.cb_puerto.configure(values=nombres)
+        ultimo = self._config().get("puerto")
+        elegido = next((n for n in nombres if self.puertos[n] == ultimo), None)
+        if not elegido:  # el primero que no sea Bluetooth
+            elegido = next((n for n in nombres if "bluetooth" not in n.lower()), nombres[0])
+        self.var_puerto.set(elegido)
+
+    def _puerto_elegido(self):
+        texto = self.var_puerto.get()
+        return self.puertos.get(texto, texto.split()[0] if texto else "")
+
+    def _config(self):
+        try:
+            with open(ARCHIVO_CONFIG, encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return {}
 
     def _paso(self):
         return dict(PASOS).get(self.var_paso.get(), 100)
@@ -476,26 +495,47 @@ class Panel:
         if self.enlace:
             self.desconectar()
             return
+        nombre = self._puerto_elegido()
+        if not nombre:
+            return
+        cfg = self._config()
+        preferido = (cfg.get("baudios"), cfg.get("direccion")) if cfg.get("puerto") == nombre else None
+        self.bt_conectar.configure(state="disabled")
+        self.lb_estado.configure(text=f"Buscando el radio en {nombre}...", foreground="#ffd479")
+
+        def buscar():
+            try:
+                r = cat.buscar_radio(nombre, preferido)
+                self.cola.put(("conexion", (nombre, r)))
+            except Exception as e:
+                self.cola.put(("conexion", (nombre, e)))
+        threading.Thread(target=buscar, daemon=True).start()
+
+    def _conexion_lista(self, nombre, r):
+        self.bt_conectar.configure(state="normal")
+        if isinstance(r, Exception) or r is None:
+            self.lb_estado.configure(text="Desconectado", foreground="#ff8080")
+            if r is None:
+                messagebox.showwarning("G1M", f"No se encontró el radio en {nombre}.\n\n"
+                                       "Comprueba que esté encendido, que el cable vaya al puerto COMM "
+                                       "y que sea el puerto correcto.")
+            else:
+                messagebox.showerror("G1M", f"No se pudo abrir {nombre}:\n{r}")
+            return
+        puerto, civ, f, baudios, direccion = r
         try:
-            baudios = int(self.var_baudios.get())
-            direccion = int(self.var_dir.get(), 0)
-            puerto = cat.abrir_puerto(self.var_puerto.get(), baudios)
-        except Exception as e:
-            messagebox.showerror("G1M", f"No se pudo abrir el puerto:\n{e}")
-            return
-        civ = cat.CIV(puerto, direccion, espera=0.25)
-        f = civ.leer_freq()
-        if not f:
-            puerto.close()
-            messagebox.showwarning("G1M", "El radio no responde. Revisa puerto, baudios y que esté encendido.")
-            return
+            with open(ARCHIVO_CONFIG, "w", encoding="utf-8") as fh:
+                json.dump({"puerto": nombre, "baudios": baudios, "direccion": direccion}, fh)
+        except OSError:
+            pass
         self.enlace = Enlace(civ, puerto, self.cola)
         self.enlace.start()
         self.freq = f
         self._pintar_freq()
-        self.lb_estado.configure(text=f"Conectado a {self.var_puerto.get()}", foreground="#7fd97f")
+        self.lb_estado.configure(text=f"Conectado a {nombre}", foreground="#7fd97f")
         self.bt_conectar.configure(text="Desconectar")
-        self.log(f"Conectado. Frecuencia {f / 1e6:.6f} MHz")
+        self.log(f"Conectado en {nombre} ({baudios} baudios, dirección 0x{direccion:02X}). "
+                 f"Frecuencia {f / 1e6:.6f} MHz")
         self.leer_ajustes()
 
     def desconectar(self):
@@ -758,6 +798,8 @@ class Panel:
                     self._aplicar_estado(dato)
                 elif tipo == "ajustes":
                     self._aplicar_ajustes(dato)
+                elif tipo == "conexion":
+                    self._conexion_lista(*dato)
         except queue.Empty:
             pass
         self.raiz.after(50, self._atender_cola)
@@ -821,9 +863,7 @@ class Panel:
 
 def main():
     p = argparse.ArgumentParser(description="Panel de control del Xiegu G1M")
-    p.add_argument("--puerto", help="COM6, /dev/ttyUSB0 o SIM; si se da, conecta al abrir")
-    p.add_argument("--baudios", type=int, default=19200)
-    p.add_argument("--dir", type=lambda s: int(s, 0), default=0x70)
+    p.add_argument("--puerto", help="opcional: COM6, /dev/ttyUSB0 o SIM para conectar al abrir")
     args = p.parse_args()
     raiz = tk.Tk()
     Panel(raiz, args)

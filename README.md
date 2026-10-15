@@ -33,8 +33,9 @@ Por defecto quedan apagados porque otros cables los usan para PTT.
 
 ## Panel de control con ventana (`g1m_control.py`)
 
-Doble clic en `abrir_g1m.bat` (conecta a COM6), o:
-`python g1m_control.py --puerto COM6`
+Doble clic en `abrir_g1m.bat` (o `python g1m_control.py`). Solo hay que **elegir el puerto** en la
+lista y pulsar **Conectar**: la velocidad y la dirección CI-V se detectan solas y se recuerdan en
+`g1m_config.json` para la próxima vez.
 
 - Frecuencia grande: **rueda del ratón sobre un dígito** cambia ese dígito; **arrastrar** sobre la
   frecuencia sintoniza rápido; **dial** circular para girar con el ratón; flechas ↑↓ y RePág/AvPág.
