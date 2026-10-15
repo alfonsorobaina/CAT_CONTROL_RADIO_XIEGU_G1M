@@ -387,6 +387,18 @@ def cmd_potencia(args):
         puerto.close()
 
 
+def cmd_crudo(args):
+    puerto, civ = conectar(args)
+    try:
+        for texto in args.comandos:
+            cuerpo = bytes.fromhex(texto.replace(" ", ""))
+            r = civ.enviar(cuerpo)
+            print(f"  {hexa(cuerpo):12s} -> {hexa(r) if r is not None else '(sin respuesta)'}")
+            time.sleep(0.3)
+    finally:
+        puerto.close()
+
+
 def resultado(ok):
     return {True: "aceptado (FB)", False: "rechazado (FA)", None: "sin respuesta"}[ok]
 
@@ -548,6 +560,11 @@ def main(argv=None):
     comunes(sp)
     sp.add_argument("modo", choices=list(MODOS_POR_NOMBRE))
     sp.set_defaults(fn=cmd_modo)
+
+    sp = sub.add_parser("crudo", help="enviar comandos CI-V en hexadecimal, ej. 0603 0403")
+    comunes(sp)
+    sp.add_argument("comandos", nargs="+", help="cuerpo del comando sin FE FE, direcciones ni FD")
+    sp.set_defaults(fn=cmd_crudo)
 
     sp = sub.add_parser("potencia", help="cambiar potencia RF (0-255)")
     comunes(sp)
