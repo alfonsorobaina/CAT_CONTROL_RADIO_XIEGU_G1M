@@ -22,6 +22,7 @@ import json
 import math
 import os
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -71,6 +72,86 @@ MEMORIAS_EJEMPLO = [
     (24_906_000, "CW", "CW QRP 12 m"), (24_915_000, "USB", "FT8 12 m"),
     (28_060_000, "CW", "CW QRP 10 m"), (28_074_000, "USB", "FT8 10 m"), (28_360_000, "USB", "SSB QRP 10 m"),
 ]
+
+
+# Icono de la ventana y de la barra de tareas (PNG en base64, dibujado para este programa)
+ICONO_64 = (
+    "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"
+)
+ICONO_32 = (
+    "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"
+)
 
 
 def fmt_freq(hz):
@@ -213,8 +294,13 @@ class Panel:
         self.retardos = {}
 
         raiz.title("Xiegu G1M – Control CAT")
+        try:
+            self.iconos = [tk.PhotoImage(data=ICONO_64), tk.PhotoImage(data=ICONO_32)]
+            raiz.iconphoto(True, *self.iconos)
+        except tk.TclError:
+            pass
         raiz.configure(bg=C_FONDO)
-        raiz.minsize(940, 640)
+        raiz.minsize(900, 560)
         self._estilos()
         self._construir()
         self._pintar_freq()
@@ -301,19 +387,22 @@ class Panel:
         marco = tk.Frame(padre, bg=C_LCD, bd=1, relief="solid", highlightbackground="#b8c6d8")
         marco.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         fila = tk.Frame(marco, bg=C_LCD)
-        fila.pack(padx=10, pady=(8, 0))
-        self.etq_vfo = tk.Label(fila, text="VFO A", bg=C_LCD, fg=C_VFO,
-                                font=("Segoe UI", 11, "bold"))
-        self.etq_vfo.pack(side="left", padx=(0, 10), anchor="n")
+        fila.pack(fill="x", padx=10, pady=(6, 0))
+        izq = tk.Frame(fila, bg=C_LCD)
+        izq.pack(side="left", padx=(0, 12))
+        self.etq_vfo = tk.Label(izq, text="VFO A", bg=C_LCD, fg=C_VFO, font=("Segoe UI", 12, "bold"))
+        self.etq_vfo.pack(anchor="w")
+        self.etq_modo = tk.Label(izq, text="USB", bg=C_LCD, fg=C_MODO, font=("Segoe UI", 14, "bold"))
+        self.etq_modo.pack(anchor="w")
         # 8 dígitos: decenas de MHz ... unidades de Hz -> XX.XXX.XXX
         self.digitos = []
         formato = [7, 6, ".", 5, 4, 3, ".", 2, 1, 0]
         for pos in formato:
             if pos == ".":
                 tk.Label(fila, text=".", bg=C_LCD, fg=C_DIGITO,
-                         font=("Consolas", 46, "bold")).pack(side="left")
+                         font=("Consolas", 40, "bold")).pack(side="left")
                 continue
-            lb = tk.Label(fila, text="0", bg=C_LCD, fg=C_DIGITO, font=("Consolas", 46, "bold"),
+            lb = tk.Label(fila, text="0", bg=C_LCD, fg=C_DIGITO, font=("Consolas", 40, "bold"),
                           cursor="sb_v_double_arrow")
             lb.pack(side="left")
             lb.potencia = 10 ** pos
@@ -328,22 +417,22 @@ class Panel:
         tk.Label(fila, text="MHz", bg=C_LCD, fg=C_SUAVE, font=("Segoe UI", 12)).pack(
             side="left", padx=6, anchor="s", pady=12)
 
+        # Segunda línea: el otro VFO (en split, la frecuencia de TX) y el medidor S
         info = tk.Frame(marco, bg=C_LCD)
         info.pack(fill="x", padx=12, pady=(0, 4))
-        self.etq_modo = tk.Label(info, text="USB", bg=C_LCD, fg=C_MODO,
-                                 font=("Segoe UI", 14, "bold"))
-        self.etq_modo.pack(side="left")
-        self.etq_otro = tk.Label(info, text="", bg=C_LCD, fg=C_SUAVE, font=("Consolas", 13))
-        self.etq_otro.pack(side="left", padx=(16, 0))
-        self.etq_split = tk.Label(info, text="", bg=C_LCD, fg=C_SPLIT, font=("Segoe UI", 11, "bold"))
+        self.etq_otro_vfo = tk.Label(info, text="VFO B", bg=C_LCD, fg=C_SUAVE, font=("Segoe UI", 11, "bold"))
+        self.etq_otro_vfo.pack(side="left")
+        self.etq_otro = tk.Label(info, text="--.---.---", bg=C_LCD, fg=C_SUAVE, font=("Consolas", 18, "bold"))
+        self.etq_otro.pack(side="left", padx=(8, 0))
+        self.etq_split = tk.Label(info, text="", bg=C_LCD, fg="white", font=("Segoe UI", 10, "bold"))
         self.etq_split.pack(side="left", padx=12)
         # Medidor S
-        self.cv_s = tk.Canvas(info, width=260, height=18, bg="#d5dde7", highlightthickness=0)
+        self.cv_s = tk.Canvas(info, width=220, height=18, bg="#d5dde7", highlightthickness=0)
         self.cv_s.pack(side="right")
         tk.Label(info, text="S", bg=C_LCD, fg=C_SUAVE).pack(side="right", padx=4)
 
         ent = tk.Frame(marco, bg=C_LCD)
-        ent.pack(fill="x", padx=12, pady=(0, 8))
+        ent.pack(fill="x", padx=12, pady=(0, 6))
         tk.Label(ent, text="Ir a:", bg=C_LCD, fg=C_SUAVE).pack(side="left")
         self.var_entrada = tk.StringVar()
         e = ttk.Entry(ent, textvariable=self.var_entrada, width=12)
@@ -353,7 +442,7 @@ class Panel:
         self.var_paso = tk.StringVar(value="100 Hz")
         ttk.Combobox(ent, textvariable=self.var_paso, width=8, state="readonly",
                      values=[p[0] for p in PASOS]).pack(side="left")
-        tk.Label(ent, text="  Ej.: 21.228.000 · 21.228 · 21228  |  rueda sobre un dígito o arrastra",
+        tk.Label(ent, text="  ej. 21.228.000 · rueda sobre un dígito o arrastra",
                  bg=C_LCD, fg="#8a96a6").pack(side="left")
 
         self.raiz.bind("<Up>", lambda e: self._mover(self._paso()))
@@ -362,7 +451,7 @@ class Panel:
         self.raiz.bind("<Next>", lambda e: self._mover(-10 * self._paso()))
 
     def _construir_dial(self, padre):
-        self.cv_dial = tk.Canvas(padre, width=170, height=170, bg=C_PANEL, highlightthickness=0,
+        self.cv_dial = tk.Canvas(padre, width=150, height=150, bg=C_PANEL, highlightthickness=0,
                                  cursor="exchange")
         self.cv_dial.grid(row=0, column=1)
         self.dial_angulo = 0.0
@@ -378,29 +467,29 @@ class Panel:
         nb.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
 
         # --- Pestaña Operación ---
-        op = ttk.Frame(nb, padding=8)
+        op = ttk.Frame(nb, padding=6)
         nb.add(op, text="Operación")
 
-        fb = ttk.LabelFrame(op, text="Bandas", padding=6)
+        fb = ttk.LabelFrame(op, text="Bandas", padding=4)
         fb.pack(fill="x")
         for i, (nombre, f) in enumerate(BANDAS):
-            ttk.Button(fb, text=nombre, width=6, command=lambda f=f, n=nombre: self._banda(n, f)).grid(
-                row=i // 5, column=i % 5, padx=2, pady=2)
+            ttk.Button(fb, text=nombre, width=5, command=lambda f=f, n=nombre: self._banda(n, f)).grid(
+                row=0, column=i, padx=1, pady=1)
 
-        fm = ttk.LabelFrame(op, text="Modo y filtro", padding=6)
-        fm.pack(fill="x", pady=6)
+        fm = ttk.LabelFrame(op, text="Modo y filtro", padding=4)
+        fm.pack(fill="x", pady=4)
         self.bt_modos = {}
         for i, m in enumerate(MODOS_PANEL):
-            b = ttk.Button(fm, text=m, width=6, command=lambda m=m: self.poner_modo(m))
-            b.grid(row=0, column=i, padx=2)
+            b = ttk.Button(fm, text=m, width=5, command=lambda m=m: self.poner_modo(m))
+            b.grid(row=0, column=i, padx=1)
             self.bt_modos[m] = b
-        ttk.Label(fm, text="Filtro").grid(row=1, column=0, pady=(6, 0))
+        ttk.Label(fm, text="Filtro").grid(row=0, column=5, padx=(14, 4))
         self.var_filtro = tk.IntVar(value=1)
         for i in (1, 2, 3):
             ttk.Radiobutton(fm, text=str(i), value=i, variable=self.var_filtro,
-                            command=lambda: self.poner_modo(self.modo)).grid(row=1, column=i, pady=(6, 0))
+                            command=lambda: self.poner_modo(self.modo)).grid(row=0, column=5 + i)
 
-        fv = ttk.LabelFrame(op, text="VFO y split", padding=6)
+        fv = ttk.LabelFrame(op, text="VFO y split", padding=4)
         fv.pack(fill="x")
         self.bt_vfo = {}
         for i, v in enumerate("AB"):
@@ -413,12 +502,12 @@ class Panel:
         self.var_split = tk.BooleanVar(value=False)
         ttk.Checkbutton(fv, text="SPLIT", variable=self.var_split,
                         command=self._split).grid(row=1, column=0, sticky="w", pady=(6, 0))
-        ttk.Label(fv, foreground=C_SUAVE, wraplength=330, justify="left",
-                  text="A = B copia el VFO A en el B. Con SPLIT recibes en el VFO activo y "
-                       "transmites en el otro.").grid(row=1, column=1, columnspan=4, sticky="w", pady=(6, 0))
+        ttk.Label(fv, foreground=C_SUAVE, wraplength=400, justify="left",
+                  text="A = B copia A en B.  SPLIT: recibe en el VFO activo y transmite en el otro.").grid(
+            row=1, column=1, columnspan=4, sticky="w", pady=(4, 0))
 
-        ftx = ttk.LabelFrame(op, text="Transmisión", padding=6)
-        ftx.pack(fill="x", pady=6)
+        ftx = ttk.LabelFrame(op, text="Transmisión", padding=4)
+        ftx.pack(fill="x", pady=4)
         self.bt_ptt = tk.Button(ftx, text="PTT", width=10, bg=C_PTT, fg=C_TX,
                                 font=("Segoe UI", 12, "bold"), relief="raised")
         self.bt_ptt.grid(row=0, column=0, rowspan=2, padx=4)
@@ -431,10 +520,9 @@ class Panel:
         self.var_tx_max = tk.IntVar(value=120)
         ttk.Spinbox(ftx, from_=5, to=600, textvariable=self.var_tx_max, width=5).grid(
             row=1, column=1, sticky="e")
-        ttk.Label(ftx, foreground=C_SUAVE, wraplength=430,
-                  text="El G1M transmite señal solo con audio en SSB/AM (micrófono) o con la llave en CW. "
-                       "El PTT por CAT conmuta a transmisión pero no genera portadora por sí mismo.").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ttk.Label(ftx, foreground=C_SUAVE, wraplength=440, justify="left",
+                  text="El PTT solo pasa a TX: la señal sale con micrófono (SSB/AM) o llave (CW).").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
         # --- Pestaña Ajustes (menú) ---
         aj = ttk.Frame(nb, padding=8)
@@ -482,12 +570,10 @@ class Panel:
         fm.rowconfigure(1, weight=1)
         fm.columnconfigure((0, 1, 2), weight=1)
         ttk.Label(fm, foreground=C_SUAVE, wraplength=330, justify="left",
-                  text="Doble clic en una memoria para ir a ella.\n"
-                       "Para guardar una nueva: pon la frecuencia y el modo en el radio, "
-                       "escribe un nombre abajo y pulsa Guardar.").grid(
+                  text="Doble clic para ir. Para guardar: sintoniza, escribe un nombre y pulsa Guardar.").grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.lst_mem = tk.Listbox(fm, bg=C_CAMPO, fg=C_TEXTO, selectbackground=C_SEL, selectforeground="white",
-                                  font=("Consolas", 10), activestyle="none")
+                                  font=("Consolas", 10), activestyle="none", height=6)
         self.lst_mem.grid(row=1, column=0, columnspan=3, sticky="nsew")
         self.lst_mem.bind("<Double-Button-1>", lambda e: self._mem_recuperar())
         self.lst_mem.bind("<Return>", lambda e: self._mem_recuperar())
@@ -732,25 +818,25 @@ class Panel:
     def _dibujar_dial(self):
         cv = self.cv_dial
         cv.delete("all")
-        cx = cy = 85
-        cv.create_oval(8, 8, 162, 162, fill="#dfe5ec", outline="#aab6c5", width=3)
-        cv.create_oval(28, 28, 142, 142, fill="#f4f6f9", outline="#c3cdd9", width=2)
+        cx = cy = 75
+        cv.create_oval(7, 7, 143, 143, fill="#dfe5ec", outline="#aab6c5", width=3)
+        cv.create_oval(25, 25, 125, 125, fill="#f4f6f9", outline="#c3cdd9", width=2)
         for i in range(36):
             a = math.radians(i * 10)
-            r1, r2 = (66, 76) if i % 3 == 0 else (70, 76)
+            r1, r2 = (58, 67) if i % 3 == 0 else (62, 67)
             cv.create_line(cx + r1 * math.cos(a), cy + r1 * math.sin(a),
                            cx + r2 * math.cos(a), cy + r2 * math.sin(a), fill="#8a96a6")
         a = self.dial_angulo
-        x, y = cx + 45 * math.cos(a), cy + 45 * math.sin(a)
-        cv.create_oval(x - 9, y - 9, x + 9, y + 9, fill=C_DIGITO, outline="")
+        x, y = cx + 40 * math.cos(a), cy + 40 * math.sin(a)
+        cv.create_oval(x - 8, y - 8, x + 8, y + 8, fill=C_DIGITO, outline="")
         cv.create_text(cx, cy, text="DIAL", fill="#8a96a6", font=("Segoe UI", 9, "bold"))
 
     def _dial_inicio(self, evento):
-        self._dial_prev = math.atan2(evento.y - 85, evento.x - 85)
+        self._dial_prev = math.atan2(evento.y - 75, evento.x - 75)
         self._dial_resto = 0.0
 
     def _dial_mover(self, evento):
-        a = math.atan2(evento.y - 85, evento.x - 85)
+        a = math.atan2(evento.y - 75, evento.x - 75)
         d = a - self._dial_prev
         if d > math.pi:
             d -= 2 * math.pi
@@ -800,16 +886,23 @@ class Panel:
         self._pintar_vfos()
 
     def _pintar_vfos(self):
-        self.etq_vfo.configure(text=f"VFO {self.vfo}")
         for x, b in self.bt_vfo.items():
             b.configure(style="Sel.TButton" if x == self.vfo else "TButton")
         otro = self._otro(self.vfo)
         f = self.freq_vfo.get(otro)
-        self.etq_otro.configure(text=f"{otro}  {fmt_freq(f)}" if f else "")
+        self.etq_otro.configure(text=fmt_freq(f) if f else "--.---.---")
         if self.var_split.get():
-            self.etq_split.configure(text=f"SPLIT  RX {self.vfo} · TX {otro}")
+            # Como en el radio: arriba el VFO de recepción, debajo el de transmisión.
+            color_tx = C_TX if self.en_tx else C_SPLIT
+            self.etq_vfo.configure(text=f"RX · VFO {self.vfo}")
+            self.etq_otro_vfo.configure(text=f"TX · VFO {otro}", fg=color_tx)
+            self.etq_otro.configure(fg=color_tx)
+            self.etq_split.configure(text=" SPLIT ", bg=color_tx)
         else:
-            self.etq_split.configure(text="")
+            self.etq_vfo.configure(text=f"VFO {self.vfo}")
+            self.etq_otro_vfo.configure(text=f"VFO {otro}", fg=C_SUAVE)
+            self.etq_otro.configure(fg=C_SUAVE)
+            self.etq_split.configure(text="", bg=C_LCD)
 
     def _leer_vfo(self, civ, v):
         civ.orden(bytes([0x07, self.SEL_VFO[v]]))
@@ -937,6 +1030,7 @@ class Panel:
             self.ptt(False)
 
     def _pintar_tx(self, tx):
+        self._pintar_vfos()
         self.lb_tx.configure(text="  TX  " if tx else "  RX  ", bg=C_TX if tx else C_RX)
         self.bt_ptt.configure(bg=C_TX if tx else C_PTT, fg="white" if tx else C_TX, relief="sunken" if tx else "raised")
 
@@ -1098,7 +1192,21 @@ def main():
     p = argparse.ArgumentParser(description="Panel de control del Xiegu G1M")
     p.add_argument("--puerto", help="opcional: COM6, /dev/ttyUSB0 o SIM para conectar al abrir")
     args = p.parse_args()
+    if sys.platform == "win32":
+        # Sin esto Windows agrupa la ventana con python.exe y muestra el icono de Python.
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Xiegu.G1M.ControlCAT")
+        except Exception:
+            pass
     raiz = tk.Tk()
+    try:
+        import serial  # noqa: F401
+    except ImportError:
+        raiz.withdraw()
+        messagebox.showerror("G1M", "Falta la librería pyserial.\n\nAbre una ventana de comandos y "
+                                    "escribe:\n\n    pip install pyserial")
+        return
     Panel(raiz, args)
     raiz.mainloop()
 
