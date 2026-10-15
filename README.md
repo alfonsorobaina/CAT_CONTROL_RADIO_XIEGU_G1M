@@ -1,4 +1,27 @@
-# Xiegu G1M – control CI-V por el puerto COMM
+# Xiegu G1M – Radio Control CAT
+
+Panel de control para PC del transceptor QRP **Xiegu G1M** por el puerto COMM (CAT, protocolo
+CI-V de Icom): frecuencia grande sintonizable con el ratón, dial, bandas, modos, VFO A/B,
+A = B, SPLIT, PTT con tiempo máximo, potencia, AGC y memorias.
+
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue) ![Windows](https://img.shields.io/badge/Windows-10%2F11-informational)
+
+## Uso rápido
+
+1. Instala Python 3 (marca "Add Python to PATH") y luego `pip install pyserial`.
+2. Copia `g1m_control.py`, `g1m_cat.py` y `abrir_g1m.bat` en una misma carpeta.
+3. Doble clic en `abrir_g1m.bat`, elige el puerto del cable en la lista y pulsa **Conectar**.
+
+## Datos técnicos del G1M (firmware V1.07)
+
+| Parámetro | Valor |
+|---|---|
+| Protocolo | CI-V (Icom), 19200 baudios 8N1, dirección 0x70 |
+| Funciona | frecuencia (03/05), modo con filtro (04/06 xx yy), VFO A/B (07 00/01), PTT (1C 00), potencia (14 0A), AGC, preamp, NB, NR, break-in |
+| Acepta pero no hace nada | volumen, ganancia RF, squelch, A=B (07 A0), A↔B (07 B0) |
+| No soporta | split (0F), atenuador (11), CW automático (17), espectro (27), medidores Po/ROE reales |
+
+## Detalles
 
 El firmware oficial (`G1M_ZIF_FW_V1.07_build001.xgf`) está **cifrado** con un cifrado por
 bloques de 16 bytes en modo ECB (probablemente AES) y la clave vive en el bootloader del
