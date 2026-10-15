@@ -59,6 +59,38 @@ INTERRUPTORES = [
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 ARCHIVO_MEMORIAS = os.path.join(CARPETA, "g1m_memorias.json")
+
+# Memorias de ejemplo (se cargan la primera vez o con el botón "Ejemplos")
+MEMORIAS_EJEMPLO = [
+    (3_560_000, "CW", "CW QRP 80 m"), (3_573_000, "USB", "FT8 80 m"), (3_690_000, "LSB", "SSB QRP 80 m"),
+    (7_030_000, "CW", "CW QRP 40 m"), (7_074_000, "USB", "FT8 40 m"), (7_090_000, "LSB", "SSB QRP 40 m"),
+    (10_116_000, "CW", "CW QRP 30 m"), (10_136_000, "USB", "FT8 30 m"),
+    (14_060_000, "CW", "CW QRP 20 m"), (14_074_000, "USB", "FT8 20 m"), (14_285_000, "USB", "SSB QRP 20 m"),
+    (18_086_000, "CW", "CW QRP 17 m"), (18_100_000, "USB", "FT8 17 m"),
+    (21_060_000, "CW", "CW QRP 15 m"), (21_074_000, "USB", "FT8 15 m"), (21_285_000, "USB", "SSB QRP 15 m"),
+    (24_906_000, "CW", "CW QRP 12 m"), (24_915_000, "USB", "FT8 12 m"),
+    (28_060_000, "CW", "CW QRP 10 m"), (28_074_000, "USB", "FT8 10 m"), (28_360_000, "USB", "SSB QRP 10 m"),
+]
+
+
+def fmt_freq(hz):
+    """7030000 -> '07.030.000', igual que la pantalla del radio."""
+    t = f"{int(hz):08d}"
+    return f"{t[:2]}.{t[2:5]}.{t[5:]}"
+
+
+def leer_freq_texto(texto):
+    """Acepta '21.228.000' (como el radio), '21.228' o '21,228' (MHz), '21228' (kHz)
+    o '21228000' (Hz). Devuelve Hz o lanza ValueError."""
+    t = texto.strip().lower().replace("mhz", "").replace("khz", "").replace(" ", "").replace(",", ".")
+    partes = t.split(".")
+    if len(partes) >= 3:
+        mhz, khz, hz = partes[0], partes[1], "".join(partes[2:])
+        if not (mhz.isdigit() and khz.isdigit() and (hz.isdigit() or hz == "")):
+            raise ValueError(texto)
+        return int(mhz) * 1_000_000 + int(khz.ljust(3, "0")[:3]) * 1000 + int(hz.ljust(3, "0")[:3] or 0)
+    v = float(t)
+    return v * 1e6 if v < 1000 else v * 1e3 if v < 100_000 else v
 ARCHIVO_CONFIG = os.path.join(CARPETA, "g1m_config.json")
 
 # Tema claro
@@ -120,7 +152,7 @@ class Enlace(threading.Thread):
             if f is not None:
                 ok = self.civ.poner_freq(f)
                 if ok is not True:
-                    self.salida.put(("log", f"Frecuencia {f / 1e6:.6f} MHz: {cat.resultado(ok)}"))
+                    self.salida.put(("log", f"Frecuencia {fmt_freq(f)}: {cat.resultado(ok)}"))
                 continue
             try:
                 descripcion, funcion, args = self.trabajos.get(timeout=0.04)
@@ -174,6 +206,7 @@ class Panel:
         self.freq_rx_split = None
         self.ptt_local = 0.0
         self.ultimo_nivel = {}
+        self.vfo = "A"
         self.memorias = self._cargar_memorias()
         self.ultima_por_banda = {}
         self.retardos = {}
@@ -239,6 +272,7 @@ class Panel:
         self.lb_tx = tk.Label(barra, text="  RX  ", bg=C_RX, fg="white",
                               font=("Segoe UI", 12, "bold"))
         self.lb_tx.pack(side="right", padx=6)
+        ttk.Button(barra, text="Registro", command=self.abrir_registro).pack(side="right", padx=6)
 
         # Zona superior: frecuencia + dial
         arriba = ttk.Frame(r, padding=6)
@@ -256,10 +290,11 @@ class Panel:
         self._construir_controles(medio)
         self._construir_memorias(medio)
 
-        # Registro
-        self.txt_log = tk.Text(r, height=6, bg=C_CAMPO, fg=C_SUAVE, relief="flat",
-                               font=("Consolas", 9))
-        self.txt_log.grid(row=3, column=0, sticky="ew", padx=6, pady=6)
+        # Línea de estado: el último mensaje. El registro completo está en el botón "Registro".
+        self.registro = []
+        self.ventana_registro = None
+        self.lb_ultimo = ttk.Label(r, text="", foreground=C_SUAVE, padding=(8, 4))
+        self.lb_ultimo.grid(row=3, column=0, sticky="ew")
 
     def _construir_frecuencia(self, padre):
         marco = tk.Frame(padre, bg=C_LCD, bd=1, relief="solid", highlightbackground="#b8c6d8")
@@ -306,7 +341,7 @@ class Panel:
 
         ent = tk.Frame(marco, bg=C_LCD)
         ent.pack(fill="x", padx=12, pady=(0, 8))
-        tk.Label(ent, text="Ir a (MHz o kHz):", bg=C_LCD, fg=C_SUAVE).pack(side="left")
+        tk.Label(ent, text="Ir a:", bg=C_LCD, fg=C_SUAVE).pack(side="left")
         self.var_entrada = tk.StringVar()
         e = ttk.Entry(ent, textvariable=self.var_entrada, width=12)
         e.pack(side="left", padx=4)
@@ -315,7 +350,7 @@ class Panel:
         self.var_paso = tk.StringVar(value="100 Hz")
         ttk.Combobox(ent, textvariable=self.var_paso, width=8, state="readonly",
                      values=[p[0] for p in PASOS]).pack(side="left")
-        tk.Label(ent, text="  Rueda sobre un dígito o arrastra la frecuencia para sintonizar",
+        tk.Label(ent, text="  Ej.: 21.228.000 · 21.228 · 21228  |  rueda sobre un dígito o arrastra",
                  bg=C_LCD, fg="#8a96a6").pack(side="left")
 
         self.raiz.bind("<Up>", lambda e: self._mover(self._paso()))
@@ -364,17 +399,21 @@ class Panel:
 
         fv = ttk.LabelFrame(op, text="VFO y split", padding=6)
         fv.pack(fill="x")
-        ttk.Button(fv, text="VFO A", command=lambda: self._vfo(0x00, "VFO A")).grid(row=0, column=0, padx=2)
-        ttk.Button(fv, text="VFO B", command=lambda: self._vfo(0x01, "VFO B")).grid(row=0, column=1, padx=2)
-        ttk.Button(fv, text="A = B", command=lambda: self._orden("A = B", b"\x07\xA0")).grid(row=0, column=2, padx=2)
-        ttk.Button(fv, text="A ↔ B", command=lambda: self._orden("A ↔ B", b"\x07\xB0")).grid(row=0, column=3, padx=2)
+        self.bt_vfo = {}
+        for i, v in enumerate("AB"):
+            b = ttk.Button(fv, text=f"VFO {v}", width=7, command=lambda v=v: self._vfo(v))
+            b.grid(row=0, column=i, padx=2)
+            self.bt_vfo[v] = b
+        ttk.Button(fv, text="A → B", width=7, command=lambda: self._copiar_vfo("A", "B")).grid(row=0, column=2, padx=2)
+        ttk.Button(fv, text="B → A", width=7, command=lambda: self._copiar_vfo("B", "A")).grid(row=0, column=3, padx=2)
+        ttk.Button(fv, text="A ↔ B", width=7, command=self._intercambiar_vfo).grid(row=0, column=4, padx=2)
         self.var_split = tk.BooleanVar(value=False)
         ttk.Checkbutton(fv, text="Split (por software)", variable=self.var_split,
                         command=self._split).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        ttk.Label(fv, text="TX en MHz").grid(row=1, column=2, pady=(6, 0))
+        ttk.Label(fv, text="Frecuencia TX").grid(row=1, column=2, pady=(6, 0))
         self.var_freq_tx = tk.StringVar()
         ttk.Entry(fv, textvariable=self.var_freq_tx, width=11).grid(row=1, column=3, pady=(6, 0))
-        ttk.Button(fv, text="TX = RX", command=lambda: self.var_freq_tx.set(f"{self.freq / 1e6:.6f}")).grid(
+        ttk.Button(fv, text="TX = RX", command=lambda: self.var_freq_tx.set(fmt_freq(self.freq))).grid(
             row=1, column=4, padx=4, pady=(6, 0))
 
         ftx = ttk.LabelFrame(op, text="Transmisión", padding=6)
@@ -439,18 +478,47 @@ class Panel:
     def _construir_memorias(self, padre):
         fm = ttk.LabelFrame(padre, text="Memorias", padding=6)
         fm.grid(row=0, column=1, sticky="nsew")
-        fm.rowconfigure(0, weight=1)
-        fm.columnconfigure(0, weight=1)
+        fm.rowconfigure(1, weight=1)
+        fm.columnconfigure((0, 1, 2), weight=1)
+        ttk.Label(fm, foreground=C_SUAVE, wraplength=330, justify="left",
+                  text="Doble clic en una memoria para ir a ella.\n"
+                       "Para guardar una nueva: pon la frecuencia y el modo en el radio, "
+                       "escribe un nombre abajo y pulsa Guardar.").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.lst_mem = tk.Listbox(fm, bg=C_CAMPO, fg=C_TEXTO, selectbackground=C_SEL, selectforeground="white",
                                   font=("Consolas", 10), activestyle="none")
-        self.lst_mem.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        self.lst_mem.grid(row=1, column=0, columnspan=3, sticky="nsew")
         self.lst_mem.bind("<Double-Button-1>", lambda e: self._mem_recuperar())
+        self.lst_mem.bind("<Return>", lambda e: self._mem_recuperar())
         self.var_mem_nombre = tk.StringVar()
-        ttk.Entry(fm, textvariable=self.var_mem_nombre).grid(row=1, column=0, columnspan=3, sticky="ew", pady=4)
-        ttk.Button(fm, text="Guardar", command=self._mem_guardar).grid(row=2, column=0, sticky="ew")
-        ttk.Button(fm, text="Ir", command=self._mem_recuperar).grid(row=2, column=1, sticky="ew", padx=4)
-        ttk.Button(fm, text="Borrar", command=self._mem_borrar).grid(row=2, column=2, sticky="ew")
+        self.ent_mem = tk.Entry(fm, textvariable=self.var_mem_nombre, relief="solid", bd=1,
+                                bg=C_CAMPO, fg=C_TEXTO)
+        self.ent_mem.grid(row=2, column=0, columnspan=3, sticky="ew", pady=4, ipady=2)
+        self._marcador(self.ent_mem, self.var_mem_nombre, "Nombre, ej.: FT8 20 m")
+        ttk.Button(fm, text="Guardar", command=self._mem_guardar).grid(row=3, column=0, sticky="ew")
+        ttk.Button(fm, text="Ir", command=self._mem_recuperar).grid(row=3, column=1, sticky="ew", padx=4)
+        ttk.Button(fm, text="Borrar", command=self._mem_borrar).grid(row=3, column=2, sticky="ew")
+        ttk.Button(fm, text="Añadir memorias de ejemplo (FT8, CW y SSB QRP)",
+                   command=self._mem_ejemplos).grid(row=4, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         self._mem_refrescar()
+
+    def _marcador(self, entrada, var, texto):
+        """Texto de ayuda en gris dentro de una casilla vacía."""
+        entrada.marcador = texto
+
+        def poner(_e=None):
+            if not var.get():
+                entrada.configure(fg="#9aa5b4")
+                var.set(texto)
+
+        def quitar(_e=None):
+            if var.get() == texto and entrada.cget("fg") == "#9aa5b4":
+                var.set("")
+                entrada.configure(fg=C_TEXTO)
+        entrada.bind("<FocusIn>", quitar)
+        entrada.bind("<FocusOut>", poner)
+        entrada.poner_marcador = poner
+        poner()
 
     # --- utilidades ---
     def _refrescar_puertos(self):
@@ -486,10 +554,38 @@ class Panel:
         return dict(PASOS).get(self.var_paso.get(), 100)
 
     def log(self, texto):
-        self.txt_log.insert("end", time.strftime("%H:%M:%S ") + texto + "\n")
-        self.txt_log.see("end")
-        if int(self.txt_log.index("end-1c").split(".")[0]) > 500:
-            self.txt_log.delete("1.0", "100.0")
+        linea = time.strftime("%H:%M:%S ") + texto
+        self.registro.append(linea)
+        del self.registro[:-500]
+        self.lb_ultimo.configure(text=linea)
+        if self.ventana_registro:
+            self.txt_registro.configure(state="normal")
+            self.txt_registro.insert("end", linea + "\n")
+            self.txt_registro.see("end")
+            self.txt_registro.configure(state="disabled")
+
+    def abrir_registro(self):
+        if self.ventana_registro:
+            self.ventana_registro.lift()
+            return
+        v = tk.Toplevel(self.raiz)
+        v.title("G1M – Registro de comandos")
+        v.geometry("620x360")
+        v.configure(bg=C_PANEL)
+        self.txt_registro = tk.Text(v, bg=C_CAMPO, fg=C_TEXTO, relief="flat", font=("Consolas", 9))
+        barra = ttk.Scrollbar(v, command=self.txt_registro.yview)
+        self.txt_registro.configure(yscrollcommand=barra.set)
+        barra.pack(side="right", fill="y")
+        self.txt_registro.pack(fill="both", expand=True)
+        self.txt_registro.insert("end", "\n".join(self.registro) + ("\n" if self.registro else ""))
+        self.txt_registro.see("end")
+        self.txt_registro.configure(state="disabled")
+
+        def cerrar():
+            self.ventana_registro = None
+            v.destroy()
+        v.protocol("WM_DELETE_WINDOW", cerrar)
+        self.ventana_registro = v
 
     def _necesita_enlace(self):
         if not self.enlace:
@@ -552,7 +648,7 @@ class Panel:
         self.lb_estado.configure(text=f"Conectado a {nombre}", foreground=C_OK)
         self.bt_conectar.configure(text="Desconectar")
         self.log(f"Conectado en {nombre} ({baudios} baudios, dirección 0x{direccion:02X}). "
-                 f"Frecuencia {f / 1e6:.6f} MHz")
+                 f"Frecuencia {fmt_freq(f)}")
         self.leer_ajustes()
 
     def desconectar(self):
@@ -613,12 +709,10 @@ class Panel:
 
     def _ir_a(self, _evento=None):
         try:
-            v = float(self.var_entrada.get().strip().replace(",", "."))
+            hz = leer_freq_texto(self.var_entrada.get())
         except ValueError:
-            self.log("Frecuencia no válida. Escríbela en MHz (7.074) o en kHz (7074)")
+            self.log("Frecuencia no válida. Ejemplos: 21.228.000  o  21.228  o  21228")
             return
-        # 7.074 -> MHz; 7074 -> kHz; 7074000 -> Hz
-        hz = v * 1e6 if v < 1000 else v * 1e3 if v < 100_000 else v
         self.poner_freq(hz)
         self.var_entrada.set("")
 
@@ -681,9 +775,62 @@ class Panel:
         for m, b in self.bt_modos.items():
             b.configure(style="Sel.TButton" if m == self.modo else "TButton")
 
-    def _vfo(self, valor, nombre):
-        self._orden(nombre, bytes([0x07, valor]))
-        self.etq_vfo.configure(text=nombre)
+    # El G1M acepta A=B (07 A0) y A<->B (07 B0) pero no los hace: se hacen aquí
+    # seleccionando cada VFO y escribiendo su frecuencia y modo.
+    SEL_VFO = {"A": 0x00, "B": 0x01}
+
+    def _vfo(self, v):
+        self._orden(f"VFO {v}", bytes([0x07, self.SEL_VFO[v]]))
+        self.vfo = v
+        self.etq_vfo.configure(text=f"VFO {v}")
+        for x, b in self.bt_vfo.items():
+            b.configure(style="Sel.TButton" if x == v else "TButton")
+
+    def _leer_vfo(self, civ, v):
+        civ.orden(bytes([0x07, self.SEL_VFO[v]]))
+        time.sleep(0.05)
+        f = civ.leer_freq()
+        modo, filtro = civ.leer_modo()
+        return f, modo, filtro
+
+    def _escribir_vfo(self, civ, v, f, modo, filtro):
+        civ.orden(bytes([0x07, self.SEL_VFO[v]]))
+        time.sleep(0.05)
+        civ.poner_freq(f)
+        if modo in cat.MODOS_POR_NOMBRE:
+            civ.poner_modo(modo, filtro or 1)
+        return civ.leer_freq() == f
+
+    def _copiar_vfo(self, origen, destino):
+        if not self._necesita_enlace():
+            return
+        civ, activo = self.enlace.civ, self.vfo
+
+        def tarea():
+            f, modo, filtro = self._leer_vfo(civ, origen)
+            if not f:
+                civ.orden(bytes([0x07, self.SEL_VFO[activo]]))
+                return f"no se pudo leer el VFO {origen}"
+            ok = self._escribir_vfo(civ, destino, f, modo, filtro)
+            civ.orden(bytes([0x07, self.SEL_VFO[activo]]))
+            return f"{fmt_freq(f)} {modo} " + ("copiado" if ok else "el radio no lo confirmó")
+        self.enlace.trabajo(f"VFO {origen} → VFO {destino}", tarea)
+
+    def _intercambiar_vfo(self):
+        if not self._necesita_enlace():
+            return
+        civ, activo = self.enlace.civ, self.vfo
+
+        def tarea():
+            a = self._leer_vfo(civ, "A")
+            b = self._leer_vfo(civ, "B")
+            if not (a[0] and b[0]):
+                civ.orden(bytes([0x07, self.SEL_VFO[activo]]))
+                return "no se pudieron leer los dos VFO"
+            ok = self._escribir_vfo(civ, "B", *a) and self._escribir_vfo(civ, "A", *b)
+            civ.orden(bytes([0x07, self.SEL_VFO[activo]]))
+            return f"A = {fmt_freq(b[0])}, B = {fmt_freq(a[0])} " + ("hecho" if ok else "el radio no lo confirmó")
+        self.enlace.trabajo("VFO A ↔ VFO B", tarea)
 
     def _nivel_cambiado(self, nombre, sub):
         var, lb = self.escalas[sub]
@@ -700,8 +847,8 @@ class Panel:
     def _split(self):
         if self.var_split.get():
             if not self.var_freq_tx.get():
-                self.var_freq_tx.set(f"{(self.freq + 1000) / 1e6:.6f}")
-            self.etq_split.configure(text=f"SPLIT  TX {self.var_freq_tx.get()} MHz")
+                self.var_freq_tx.set(fmt_freq(self.freq + 1000))
+            self.etq_split.configure(text=f"SPLIT  TX {self.var_freq_tx.get()}")
             self.log("Split activado: al transmitir el programa salta a la frecuencia de TX y vuelve al soltar.")
         else:
             self.etq_split.configure(text="")
@@ -714,7 +861,7 @@ class Panel:
         civ = self.enlace.civ
         split = self.var_split.get()
         try:
-            f_tx = float(self.var_freq_tx.get().replace(",", ".")) * 1e6 if split else None
+            f_tx = leer_freq_texto(self.var_freq_tx.get()) if split else None
         except ValueError:
             self.log("Frecuencia de TX no válida; split desactivado.")
             self.var_split.set(False)
@@ -729,7 +876,7 @@ class Panel:
                     civ.poner_freq(f_tx)
                     time.sleep(0.08)
                     return civ.ptt(True)
-                self.enlace.trabajo(f"PTT ON (split, TX {f_tx / 1e6:.6f})", tx_split)
+                self.enlace.trabajo(f"PTT ON (split, TX {fmt_freq(f_tx)})", tx_split)
             else:
                 self.enlace.trabajo("PTT ON", civ.ptt, True)
         else:
@@ -767,8 +914,19 @@ class Panel:
         try:
             with open(ARCHIVO_MEMORIAS, encoding="utf-8") as fh:
                 return json.load(fh)
+        except FileNotFoundError:
+            return [{"freq": f, "modo": m, "filtro": 1, "nombre": n} for f, m, n in MEMORIAS_EJEMPLO]
         except Exception:
             return []
+
+    def _mem_ejemplos(self):
+        existentes = {(m["freq"], m["modo"]) for m in self.memorias}
+        nuevas = [{"freq": f, "modo": m, "filtro": 1, "nombre": n}
+                  for f, m, n in MEMORIAS_EJEMPLO if (f, m) not in existentes]
+        self.memorias = sorted(self.memorias + nuevas, key=lambda m: m["freq"])
+        self._guardar_memorias()
+        self._mem_refrescar()
+        self.log(f"{len(nuevas)} memorias de ejemplo añadidas.")
 
     def _guardar_memorias(self):
         try:
@@ -780,13 +938,19 @@ class Panel:
     def _mem_refrescar(self):
         self.lst_mem.delete(0, "end")
         for m in self.memorias:
-            self.lst_mem.insert("end", f"{m['freq'] / 1e6:10.6f}  {m['modo']:4s}  {m.get('nombre', '')}")
+            self.lst_mem.insert("end", f"{fmt_freq(m['freq'])}  {m['modo']:4s}  {m.get('nombre', '')}")
 
     def _mem_guardar(self):
+        nombre = self.var_mem_nombre.get().strip()
+        if nombre == getattr(self.ent_mem, "marcador", None):
+            nombre = ""
         self.memorias.append({"freq": self.freq, "modo": self.modo, "filtro": self.var_filtro.get(),
-                              "nombre": self.var_mem_nombre.get().strip()})
+                              "nombre": nombre})
         self.memorias.sort(key=lambda m: m["freq"])
+        self.log(f"Memoria guardada: {fmt_freq(self.freq)} {self.modo} {nombre}")
         self.var_mem_nombre.set("")
+        self.lst_mem.focus_set()
+        self.ent_mem.poner_marcador()
         self._guardar_memorias()
         self._mem_refrescar()
 

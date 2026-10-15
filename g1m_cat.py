@@ -284,6 +284,8 @@ class RadioSimulado:
         self.tx = False
         self.niveles = {}
         self.ajustes = {}
+        self.vfo = 0
+        self.vfos = {1: (21_228_000, 0x01)}
 
     @property
     def in_waiting(self):
@@ -346,6 +348,12 @@ class RadioSimulado:
             return c + bytes([self.ajustes.get(bytes(c), 0)])
         if c[:1] in (b"\x16", b"\x11") and len(c) == (3 if c[:1] == b"\x16" else 2):
             self.ajustes[bytes(c[:-1])] = c[-1]
+            return bytes([OK])
+        if c[:1] == b"\x07" and len(c) == 2 and c[1] in (0x00, 0x01):
+            # Como el G1M: dos VFO independientes; A=B (07 A0) y A<->B (07 B0) no hacen nada.
+            self.vfos[self.vfo] = (self.freq, self.modo)
+            self.vfo = c[1]
+            self.freq, self.modo = self.vfos.get(self.vfo, (self.freq, self.modo))
             return bytes([OK])
         if c[:1] == b"\x07":
             return bytes([OK])
