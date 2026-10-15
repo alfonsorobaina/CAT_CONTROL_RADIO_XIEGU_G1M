@@ -472,15 +472,21 @@ def cmd_portadora(args):
             muestras = []
             fin = time.monotonic() + segundos
             while time.monotonic() < fin:
-                muestras.append({"Po": civ.leer_medidor(0x11), "SWR": civ.leer_medidor(0x12)})
+                muestras.append({"TX": civ.leer_ptt(), "Po": civ.leer_medidor(0x11),
+                                 "SWR": civ.leer_medidor(0x12)})
                 time.sleep(0.2)
             civ.ptt(False)
             pos = [m["Po"] for m in muestras if m["Po"] is not None]
+            tx = [m["TX"] for m in muestras if m["TX"] is not None]
+            en_tx = (all(tx) and "sí") if tx else "sin dato"
+            en_tx = en_tx or "NO"
             fila = {"pedida_hz": int(f), "leida_hz": leida, "poner_freq": resultado(r_f),
-                    "ptt": resultado(r_ptt), "Po_max": max(pos) if pos else None, "muestras": muestras}
+                    "ptt": resultado(r_ptt), "radio_en_TX": en_tx,
+                    "Po_max": max(pos) if pos else None, "muestras": muestras}
             resultados.append(fila)
-            print(f"  {f / 1e6:9.4f} MHz  freq:{resultado(r_f):14s} ptt:{resultado(r_ptt):14s} "
-                  f"Po máx: {fila['Po_max']}  (0-255)")
+            po = "medir con wattímetro" if po_rx else fila["Po_max"]
+            print(f"  {f / 1e6:9.4f} MHz  leída:{(leida or 0) / 1e6:9.4f}  ptt:{resultado(r_ptt):14s} "
+                  f"radio en TX: {en_tx:8s} Po: {po}")
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nInterrumpido.")
