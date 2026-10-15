@@ -203,7 +203,8 @@ class Panel:
         self.filtro = 1
         self.en_tx = False
         self.tx_desde = 0.0
-        self.freq_rx_split = None
+        self.freq_vfo = {"A": None, "B": None}   # última frecuencia conocida de cada VFO
+        self.split_vfo_rx = None
         self.ptt_local = 0.0
         self.ultimo_nivel = {}
         self.vfo = "A"
@@ -332,7 +333,9 @@ class Panel:
         self.etq_modo = tk.Label(info, text="USB", bg=C_LCD, fg=C_MODO,
                                  font=("Segoe UI", 14, "bold"))
         self.etq_modo.pack(side="left")
-        self.etq_split = tk.Label(info, text="", bg=C_LCD, fg=C_SPLIT, font=("Segoe UI", 11))
+        self.etq_otro = tk.Label(info, text="", bg=C_LCD, fg=C_SUAVE, font=("Consolas", 13))
+        self.etq_otro.pack(side="left", padx=(16, 0))
+        self.etq_split = tk.Label(info, text="", bg=C_LCD, fg=C_SPLIT, font=("Segoe UI", 11, "bold"))
         self.etq_split.pack(side="left", padx=12)
         # Medidor S
         self.cv_s = tk.Canvas(info, width=260, height=18, bg="#d5dde7", highlightthickness=0)
@@ -404,17 +407,15 @@ class Panel:
             b = ttk.Button(fv, text=f"VFO {v}", width=7, command=lambda v=v: self._vfo(v))
             b.grid(row=0, column=i, padx=2)
             self.bt_vfo[v] = b
-        ttk.Button(fv, text="A → B", width=7, command=lambda: self._copiar_vfo("A", "B")).grid(row=0, column=2, padx=2)
-        ttk.Button(fv, text="B → A", width=7, command=lambda: self._copiar_vfo("B", "A")).grid(row=0, column=3, padx=2)
+        ttk.Button(fv, text="A = B", width=7, command=lambda: self._copiar_vfo("A", "B")).grid(row=0, column=2, padx=2)
+        ttk.Button(fv, text="B = A", width=7, command=lambda: self._copiar_vfo("B", "A")).grid(row=0, column=3, padx=2)
         ttk.Button(fv, text="A ↔ B", width=7, command=self._intercambiar_vfo).grid(row=0, column=4, padx=2)
         self.var_split = tk.BooleanVar(value=False)
-        ttk.Checkbutton(fv, text="Split (por software)", variable=self.var_split,
-                        command=self._split).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
-        ttk.Label(fv, text="Frecuencia TX").grid(row=1, column=2, pady=(6, 0))
-        self.var_freq_tx = tk.StringVar()
-        ttk.Entry(fv, textvariable=self.var_freq_tx, width=11).grid(row=1, column=3, pady=(6, 0))
-        ttk.Button(fv, text="TX = RX", command=lambda: self.var_freq_tx.set(fmt_freq(self.freq))).grid(
-            row=1, column=4, padx=4, pady=(6, 0))
+        ttk.Checkbutton(fv, text="SPLIT", variable=self.var_split,
+                        command=self._split).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(fv, foreground=C_SUAVE, wraplength=330, justify="left",
+                  text="A = B copia el VFO A en el B. Con SPLIT recibes en el VFO activo y "
+                       "transmites en el otro.").grid(row=1, column=1, columnspan=4, sticky="w", pady=(6, 0))
 
         ftx = ttk.LabelFrame(op, text="Transmisión", padding=6)
         ftx.pack(fill="x", pady=6)
@@ -649,7 +650,10 @@ class Panel:
         self.bt_conectar.configure(text="Desconectar")
         self.log(f"Conectado en {nombre} ({baudios} baudios, dirección 0x{direccion:02X}). "
                  f"Frecuencia {fmt_freq(f)}")
+        self.vfo = "A"
         self.leer_ajustes()
+        self._leer_vfos_al_conectar()
+        self._pintar_vfos()
 
     def desconectar(self):
         if self.en_tx:
@@ -685,6 +689,7 @@ class Panel:
     def poner_freq(self, hz, enviar=True):
         hz = max(FREQ_MIN, min(FREQ_MAX, int(round(hz))))
         self.freq = hz
+        self.freq_vfo[self.vfo] = hz
         self._pintar_freq()
         if enviar and self.enlace and not (self.en_tx and self.var_split.get()):
             self.enlace.pedir_freq(hz)
@@ -779,18 +784,40 @@ class Panel:
     # seleccionando cada VFO y escribiendo su frecuencia y modo.
     SEL_VFO = {"A": 0x00, "B": 0x01}
 
+    @staticmethod
+    def _otro(v):
+        return "B" if v == "A" else "A"
+
     def _vfo(self, v):
+        if not self._necesita_enlace() or v == self.vfo:
+            return
         self._orden(f"VFO {v}", bytes([0x07, self.SEL_VFO[v]]))
         self.vfo = v
-        self.etq_vfo.configure(text=f"VFO {v}")
+        if self.freq_vfo.get(v):
+            self.freq = self.freq_vfo[v]
+            self._pintar_freq()
+        self.enlace.ultima_sintonia = 0  # que el sondeo muestre ya el VFO nuevo
+        self._pintar_vfos()
+
+    def _pintar_vfos(self):
+        self.etq_vfo.configure(text=f"VFO {self.vfo}")
         for x, b in self.bt_vfo.items():
-            b.configure(style="Sel.TButton" if x == v else "TButton")
+            b.configure(style="Sel.TButton" if x == self.vfo else "TButton")
+        otro = self._otro(self.vfo)
+        f = self.freq_vfo.get(otro)
+        self.etq_otro.configure(text=f"{otro}  {fmt_freq(f)}" if f else "")
+        if self.var_split.get():
+            self.etq_split.configure(text=f"SPLIT  RX {self.vfo} · TX {otro}")
+        else:
+            self.etq_split.configure(text="")
 
     def _leer_vfo(self, civ, v):
         civ.orden(bytes([0x07, self.SEL_VFO[v]]))
         time.sleep(0.05)
         f = civ.leer_freq()
         modo, filtro = civ.leer_modo()
+        if f:
+            self.cola.put(("vfo_freq", (v, f)))
         return f, modo, filtro
 
     def _escribir_vfo(self, civ, v, f, modo, filtro):
@@ -799,7 +826,20 @@ class Panel:
         civ.poner_freq(f)
         if modo in cat.MODOS_POR_NOMBRE:
             civ.poner_modo(modo, filtro or 1)
-        return civ.leer_freq() == f
+        leida = civ.leer_freq()
+        if leida:
+            self.cola.put(("vfo_freq", (v, leida)))
+        return leida == f
+
+    def _leer_vfos_al_conectar(self):
+        """Pone el radio en VFO A y lee también la frecuencia del VFO B."""
+        civ = self.enlace.civ
+
+        def tarea():
+            self._leer_vfo(civ, "B")
+            self._leer_vfo(civ, "A")
+            return "leídos"
+        self.enlace.trabajo("VFO A y B", tarea)
 
     def _copiar_vfo(self, origen, destino):
         if not self._necesita_enlace():
@@ -845,13 +885,14 @@ class Panel:
 
     # --- split por software y PTT ---
     def _split(self):
+        if self.en_tx:  # no cambiar el split en mitad de una transmisión
+            self.var_split.set(not self.var_split.get())
+            return
         if self.var_split.get():
-            if not self.var_freq_tx.get():
-                self.var_freq_tx.set(fmt_freq(self.freq + 1000))
-            self.etq_split.configure(text=f"SPLIT  TX {self.var_freq_tx.get()}")
-            self.log("Split activado: al transmitir el programa salta a la frecuencia de TX y vuelve al soltar.")
+            self.log(f"SPLIT: recibe en VFO {self.vfo}, transmite en VFO {self._otro(self.vfo)}.")
         else:
-            self.etq_split.configure(text="")
+            self.log("SPLIT desactivado.")
+        self._pintar_vfos()
 
     def ptt(self, encender):
         # Apagar siempre se envía, aunque la ventana crea que ya está en RX.
@@ -859,36 +900,32 @@ class Panel:
             return
         self.ptt_local = time.monotonic()
         civ = self.enlace.civ
-        split = self.var_split.get()
-        try:
-            f_tx = leer_freq_texto(self.var_freq_tx.get()) if split else None
-        except ValueError:
-            self.log("Frecuencia de TX no válida; split desactivado.")
-            self.var_split.set(False)
-            f_tx = None
         if encender:
             self.en_tx = True
             self.tx_desde = time.monotonic()
-            if f_tx:
-                self.freq_rx_split = self.freq
+            if self.var_split.get():
+                # SPLIT: se transmite en el otro VFO y al soltar se vuelve al de recepción.
+                rx, tx = self.vfo, self._otro(self.vfo)
+                self.split_vfo_rx = rx
 
                 def tx_split():
-                    civ.poner_freq(f_tx)
+                    civ.orden(bytes([0x07, self.SEL_VFO[tx]]))
                     time.sleep(0.08)
                     return civ.ptt(True)
-                self.enlace.trabajo(f"PTT ON (split, TX {fmt_freq(f_tx)})", tx_split)
+                f_tx = self.freq_vfo.get(tx)
+                self.enlace.trabajo(f"PTT ON (SPLIT, TX en VFO {tx}"
+                                    + (f" {fmt_freq(f_tx)})" if f_tx else ")"), tx_split)
             else:
                 self.enlace.trabajo("PTT ON", civ.ptt, True)
         else:
             self.en_tx = False
-            rx = self.freq_rx_split
-            self.freq_rx_split = None
+            rx, self.split_vfo_rx = self.split_vfo_rx, None
 
             def rx_vuelta():
                 r = civ.ptt(False)
                 if rx:
                     time.sleep(0.05)
-                    civ.poner_freq(rx)
+                    civ.orden(bytes([0x07, self.SEL_VFO[rx]]))
                 return r
             self.enlace.trabajo("PTT OFF", rx_vuelta)
         self._pintar_tx(self.en_tx)
@@ -988,13 +1025,20 @@ class Panel:
                     self._aplicar_ajustes(dato)
                 elif tipo == "conexion":
                     self._conexion_lista(*dato)
+                elif tipo == "vfo_freq":
+                    v, f = dato
+                    self.freq_vfo[v] = f
+                    self._pintar_vfos()
         except queue.Empty:
             pass
         self.raiz.after(50, self._atender_cola)
 
     def _aplicar_estado(self, e):
-        # No pisar la frecuencia mientras el usuario sintoniza ni durante TX en split.
-        if e["freq"] and not e["reciente"] and not (self.en_tx and self.var_split.get()):
+        # No pisar la frecuencia mientras el usuario sintoniza, ni durante TX en split
+        # (el radio está en el otro VFO) ni justo al soltar el PTT.
+        en_split = self.var_split.get() and (self.en_tx or time.monotonic() - self.ptt_local < 1.2)
+        if e["freq"] and not e["reciente"] and not en_split:
+            self.freq_vfo[self.vfo] = e["freq"]
             if e["freq"] != self.freq:
                 self.freq = e["freq"]
                 self._pintar_freq()
