@@ -215,6 +215,14 @@ class CIV:
         return bool(d[0]) if d else None
 
     # --- órdenes ---
+    def orden(self, cuerpo):
+        """Envía un comando de escritura; True = FB, False = FA, None = sin respuesta."""
+        return self._ordena(bytes(cuerpo))
+
+    def leer_byte(self, cmd):
+        d = self._dato(bytes(cmd))
+        return d[0] if d else None
+
     def poner_freq(self, hz):
         return self._ordena(b"\x05" + freq_a_bcd(hz))
 
@@ -246,6 +254,8 @@ class RadioSimulado:
         self.modo = 0x01
         self.potencia = 255
         self.tx = False
+        self.niveles = {}
+        self.ajustes = {}
 
     @property
     def in_waiting(self):
@@ -299,6 +309,18 @@ class RadioSimulado:
             return bytes([OK])
         if c == b"\x19\x00":
             return c + bytes([0x70])
+        if c[:1] == b"\x14" and len(c) == 2:
+            return c + nivel_a_bcd(self.niveles.get(c[1], 128))
+        if c[:1] == b"\x14" and len(c) == 4:
+            self.niveles[c[1]] = bcd_a_nivel(c[2:])
+            return bytes([OK])
+        if c[:1] in (b"\x16", b"\x11") and len(c) == (2 if c[:1] == b"\x16" else 1):
+            return c + bytes([self.ajustes.get(bytes(c), 0)])
+        if c[:1] in (b"\x16", b"\x11") and len(c) == (3 if c[:1] == b"\x16" else 2):
+            self.ajustes[bytes(c[:-1])] = c[-1]
+            return bytes([OK])
+        if c[:1] == b"\x07":
+            return bytes([OK])
         return bytes([NG])
 
 

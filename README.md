@@ -30,3 +30,22 @@ Con `-v` se ven las tramas en hexadecimal; con `--puerto SIM` se usa un radio si
 
 Si el radio no responde, prueba `--rts` o `--dtr` (algunos cables los usan para alimentarse).
 Por defecto quedan apagados porque otros cables los usan para PTT.
+
+## Panel de control con ventana (`g1m_control.py`)
+
+Doble clic en `abrir_g1m.bat` (conecta a COM6), o:
+`python g1m_control.py --puerto COM6`
+
+- Frecuencia grande: **rueda del ratón sobre un dígito** cambia ese dígito; **arrastrar** sobre la
+  frecuencia sintoniza rápido; **dial** circular para girar con el ratón; flechas ↑↓ y RePág/AvPág.
+- Bandas, modos (LSB/USB/CW/CW-R/AM) con filtro 1-3, VFO A/B, A=B, A↔B.
+- **Split por software**: al transmitir salta a la frecuencia de TX y vuelve al soltar
+  (el G1M rechaza el split por CAT).
+- PTT pulsado o en modo interruptor, con tiempo máximo de TX.
+- Ajustes: volumen, ganancia RF, squelch, potencia, micro, velocidad CW, AGC, preamplificador,
+  atenuador, NB, NR y break-in. El registro de abajo indica si el radio acepta cada orden.
+- Memorias guardadas en `g1m_memorias.json`.
+
+Datos confirmados con el radio real: COM6, 19200 baudios, dirección 0x70. El modo solo se acepta
+con byte de filtro (`06 <modo> <filtro>`); los medidores de Po/ROE devuelven valores fijos; los
+comandos `17` (CW automático) y `27` (espectro) no responden.
