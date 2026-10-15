@@ -43,8 +43,8 @@ lista y pulsar **Conectar**: la velocidad y la dirección CI-V se detectan solas
 - **Split por software**: al transmitir salta a la frecuencia de TX y vuelve al soltar
   (el G1M rechaza el split por CAT).
 - PTT pulsado o en modo interruptor, con tiempo máximo de TX.
-- Ajustes: volumen, ganancia RF, squelch, potencia, micro, velocidad CW, AGC, preamplificador,
-  atenuador, NB, NR y break-in. El registro de abajo indica si el radio acepta cada orden.
+- Ajustes: potencia, AGC, preamplificador, NB, NR y break-in. Volumen, ganancia RF, squelch y
+  atenuador no están: probado en el G1M, el radio los acepta (o rechaza) pero no hacen nada.
 - Memorias guardadas en `g1m_memorias.json`.
 
 Datos confirmados con el radio real: COM6, 19200 baudios, dirección 0x70. El modo solo se acepta

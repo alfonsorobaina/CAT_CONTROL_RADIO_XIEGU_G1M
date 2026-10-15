@@ -42,15 +42,16 @@ PASOS = [("10 Hz", 10), ("50 Hz", 50), ("100 Hz", 100), ("500 Hz", 500),
 MODOS_PANEL = ["LSB", "USB", "CW", "CW-R", "AM"]
 AGC = {"Rápido": 0x01, "Medio": 0x02, "Lento": 0x03}
 
-# Niveles del comando 14 xx (0-255): (nombre, subcomando)
+# Niveles del comando 14 xx (0-255): (nombre, subcomando).
+# Probado en el G1M V1.07: volumen (14 01), ganancia RF (14 02) y squelch (14 03)
+# se aceptan con FB pero no hacen nada; micro y velocidad CW devuelven el mismo
+# valor de relleno. Por eso solo queda la potencia.
 NIVELES = [
-    ("Volumen (AF)", 0x01), ("Ganancia RF", 0x02), ("Squelch", 0x03),
-    ("Potencia TX", 0x0A), ("Ganancia micro", 0x0B), ("Velocidad CW", 0x0C),
+    ("Potencia TX", 0x0A),
 ]
 # Interruptores: (nombre, comando sin el valor, valor encendido)
 INTERRUPTORES = [
     ("Preamplificador", b"\x16\x02", 0x01),
-    ("Atenuador", b"\x11", 0x20),
     ("Noise blanker", b"\x16\x22", 0x01),
     ("Reducción ruido", b"\x16\x40", 0x01),
     ("Break-in CW", b"\x16\x47", 0x01),
@@ -60,13 +61,27 @@ CARPETA = os.path.dirname(os.path.abspath(__file__))
 ARCHIVO_MEMORIAS = os.path.join(CARPETA, "g1m_memorias.json")
 ARCHIVO_CONFIG = os.path.join(CARPETA, "g1m_config.json")
 
-C_FONDO = "#15171c"
-C_PANEL = "#1f232b"
-C_TEXTO = "#e6e6e6"
-C_DIGITO = "#ffb000"
-C_DIGITO_SEL = "#ffe08a"
-C_TX = "#e0353b"
+# Tema claro
+C_FONDO = "#e9edf2"
+C_PANEL = "#f7f9fb"
+C_TEXTO = "#1f2a37"
+C_SUAVE = "#5f6b7a"
+C_CAMPO = "#ffffff"
+C_BOTON = "#e1e7ef"
+C_BOTON_ACT = "#cfd8e4"
+C_SEL = "#3f72c4"
+C_LCD = "#e4edf7"
+C_DIGITO = "#12407a"
+C_DIGITO_SEL = "#c0392b"
+C_VFO = "#3f72c4"
+C_MODO = "#1e7e34"
+C_SPLIT = "#b7791f"
+C_TX = "#d63031"
 C_RX = "#2e9e4f"
+C_PTT = "#f2c9c9"
+C_ERROR = "#c0392b"
+C_OK = "#1e7e34"
+C_AVISO = "#b7791f"
 
 
 # ----------------------------------------------------------------------------
@@ -158,6 +173,7 @@ class Panel:
         self.tx_desde = 0.0
         self.freq_rx_split = None
         self.ptt_local = 0.0
+        self.ultimo_nivel = {}
         self.memorias = self._cargar_memorias()
         self.ultima_por_banda = {}
         self.retardos = {}
@@ -182,21 +198,22 @@ class Panel:
             st.theme_use("clam")
         except tk.TclError:
             pass
-        st.configure(".", background=C_PANEL, foreground=C_TEXTO, fieldbackground="#2a2f39")
+        st.configure(".", background=C_PANEL, foreground=C_TEXTO, fieldbackground=C_CAMPO)
         st.configure("TFrame", background=C_PANEL)
         st.configure("Fondo.TFrame", background=C_FONDO)
         st.configure("TLabelframe", background=C_PANEL, foreground=C_TEXTO)
-        st.configure("TLabelframe.Label", background=C_PANEL, foreground="#9fb3c8")
+        st.configure("TLabelframe.Label", background=C_PANEL, foreground=C_SEL)
         st.configure("TLabel", background=C_PANEL, foreground=C_TEXTO)
-        st.configure("TButton", background="#2f3542", foreground=C_TEXTO, padding=4)
-        st.map("TButton", background=[("active", "#3d4556")])
-        st.configure("Sel.TButton", background="#4a6fa5")
+        st.configure("TButton", background=C_BOTON, foreground=C_TEXTO, padding=4)
+        st.map("TButton", background=[("active", C_BOTON_ACT)])
+        st.configure("Sel.TButton", background=C_SEL, foreground="white")
+        st.map("Sel.TButton", background=[("active", C_SEL)])
         st.configure("TCheckbutton", background=C_PANEL, foreground=C_TEXTO)
         st.configure("Horizontal.TScale", background=C_PANEL)
         st.configure("TNotebook", background=C_PANEL)
-        st.configure("TNotebook.Tab", background="#2a2f39", foreground="#9fb3c8", padding=(12, 4))
-        st.map("TNotebook.Tab", background=[("selected", "#4a6fa5")], foreground=[("selected", "white")])
-        st.map("TCombobox", fieldbackground=[("readonly", "#2a2f39")], foreground=[("readonly", C_TEXTO)])
+        st.configure("TNotebook.Tab", background=C_BOTON, foreground=C_SUAVE, padding=(12, 4))
+        st.map("TNotebook.Tab", background=[("selected", C_SEL)], foreground=[("selected", "white")])
+        st.map("TCombobox", fieldbackground=[("readonly", C_CAMPO)], foreground=[("readonly", C_TEXTO)])
         st.configure("TRadiobutton", background=C_PANEL, foreground=C_TEXTO)
         st.configure("TSpinbox", foreground=C_TEXTO)
         st.configure("TEntry", foreground=C_TEXTO)
@@ -217,7 +234,7 @@ class Panel:
         self._refrescar_puertos()
         self.bt_conectar = ttk.Button(barra, text="Conectar", command=self.conectar)
         self.bt_conectar.pack(side="left", padx=6)
-        self.lb_estado = ttk.Label(barra, text="Desconectado", foreground="#ff8080")
+        self.lb_estado = ttk.Label(barra, text="Desconectado", foreground=C_ERROR)
         self.lb_estado.pack(side="left", padx=6)
         self.lb_tx = tk.Label(barra, text="  RX  ", bg=C_RX, fg="white",
                               font=("Segoe UI", 12, "bold"))
@@ -240,16 +257,16 @@ class Panel:
         self._construir_memorias(medio)
 
         # Registro
-        self.txt_log = tk.Text(r, height=6, bg="#0f1115", fg="#9fb3c8", relief="flat",
+        self.txt_log = tk.Text(r, height=6, bg=C_CAMPO, fg=C_SUAVE, relief="flat",
                                font=("Consolas", 9))
         self.txt_log.grid(row=3, column=0, sticky="ew", padx=6, pady=6)
 
     def _construir_frecuencia(self, padre):
-        marco = tk.Frame(padre, bg="black", bd=2, relief="sunken")
+        marco = tk.Frame(padre, bg=C_LCD, bd=1, relief="solid", highlightbackground="#b8c6d8")
         marco.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        fila = tk.Frame(marco, bg="black")
+        fila = tk.Frame(marco, bg=C_LCD)
         fila.pack(padx=10, pady=(8, 0))
-        self.etq_vfo = tk.Label(fila, text="VFO A", bg="black", fg="#7fa7d9",
+        self.etq_vfo = tk.Label(fila, text="VFO A", bg=C_LCD, fg=C_VFO,
                                 font=("Segoe UI", 11, "bold"))
         self.etq_vfo.pack(side="left", padx=(0, 10), anchor="n")
         # 8 dígitos: decenas de MHz ... unidades de Hz -> XX.XXX.XXX
@@ -257,10 +274,10 @@ class Panel:
         formato = [7, 6, ".", 5, 4, 3, ".", 2, 1, 0]
         for pos in formato:
             if pos == ".":
-                tk.Label(fila, text=".", bg="black", fg=C_DIGITO,
+                tk.Label(fila, text=".", bg=C_LCD, fg=C_DIGITO,
                          font=("Consolas", 46, "bold")).pack(side="left")
                 continue
-            lb = tk.Label(fila, text="0", bg="black", fg=C_DIGITO, font=("Consolas", 46, "bold"),
+            lb = tk.Label(fila, text="0", bg=C_LCD, fg=C_DIGITO, font=("Consolas", 46, "bold"),
                           cursor="sb_v_double_arrow")
             lb.pack(side="left")
             lb.potencia = 10 ** pos
@@ -272,34 +289,34 @@ class Panel:
             lb.bind("<ButtonPress-1>", self._arrastre_inicio)
             lb.bind("<B1-Motion>", self._arrastre)
             self.digitos.append(lb)
-        tk.Label(fila, text="MHz", bg="black", fg="#888", font=("Segoe UI", 12)).pack(
+        tk.Label(fila, text="MHz", bg=C_LCD, fg=C_SUAVE, font=("Segoe UI", 12)).pack(
             side="left", padx=6, anchor="s", pady=12)
 
-        info = tk.Frame(marco, bg="black")
+        info = tk.Frame(marco, bg=C_LCD)
         info.pack(fill="x", padx=12, pady=(0, 4))
-        self.etq_modo = tk.Label(info, text="USB", bg="black", fg="#7fd97f",
+        self.etq_modo = tk.Label(info, text="USB", bg=C_LCD, fg=C_MODO,
                                  font=("Segoe UI", 14, "bold"))
         self.etq_modo.pack(side="left")
-        self.etq_split = tk.Label(info, text="", bg="black", fg="#ff9f43", font=("Segoe UI", 11))
+        self.etq_split = tk.Label(info, text="", bg=C_LCD, fg=C_SPLIT, font=("Segoe UI", 11))
         self.etq_split.pack(side="left", padx=12)
         # Medidor S
-        self.cv_s = tk.Canvas(info, width=260, height=18, bg="#101010", highlightthickness=0)
+        self.cv_s = tk.Canvas(info, width=260, height=18, bg="#d5dde7", highlightthickness=0)
         self.cv_s.pack(side="right")
-        tk.Label(info, text="S", bg="black", fg="#888").pack(side="right", padx=4)
+        tk.Label(info, text="S", bg=C_LCD, fg=C_SUAVE).pack(side="right", padx=4)
 
-        ent = tk.Frame(marco, bg="black")
+        ent = tk.Frame(marco, bg=C_LCD)
         ent.pack(fill="x", padx=12, pady=(0, 8))
-        tk.Label(ent, text="Ir a (MHz):", bg="black", fg="#888").pack(side="left")
+        tk.Label(ent, text="Ir a (MHz o kHz):", bg=C_LCD, fg=C_SUAVE).pack(side="left")
         self.var_entrada = tk.StringVar()
         e = ttk.Entry(ent, textvariable=self.var_entrada, width=12)
         e.pack(side="left", padx=4)
         e.bind("<Return>", self._ir_a)
-        tk.Label(ent, text="Paso:", bg="black", fg="#888").pack(side="left", padx=(12, 2))
+        tk.Label(ent, text="Paso:", bg=C_LCD, fg=C_SUAVE).pack(side="left", padx=(12, 2))
         self.var_paso = tk.StringVar(value="100 Hz")
         ttk.Combobox(ent, textvariable=self.var_paso, width=8, state="readonly",
                      values=[p[0] for p in PASOS]).pack(side="left")
         tk.Label(ent, text="  Rueda sobre un dígito o arrastra la frecuencia para sintonizar",
-                 bg="black", fg="#555").pack(side="left")
+                 bg=C_LCD, fg="#8a96a6").pack(side="left")
 
         self.raiz.bind("<Up>", lambda e: self._mover(self._paso()))
         self.raiz.bind("<Down>", lambda e: self._mover(-self._paso()))
@@ -362,7 +379,7 @@ class Panel:
 
         ftx = ttk.LabelFrame(op, text="Transmisión", padding=6)
         ftx.pack(fill="x", pady=6)
-        self.bt_ptt = tk.Button(ftx, text="PTT", width=10, bg="#5a2226", fg="white",
+        self.bt_ptt = tk.Button(ftx, text="PTT", width=10, bg=C_PTT, fg=C_TX,
                                 font=("Segoe UI", 12, "bold"), relief="raised")
         self.bt_ptt.grid(row=0, column=0, rowspan=2, padx=4)
         self.bt_ptt.bind("<ButtonPress-1>", lambda e: self.ptt(True) if not self.var_ptt_fijo.get() else None)
@@ -374,7 +391,7 @@ class Panel:
         self.var_tx_max = tk.IntVar(value=120)
         ttk.Spinbox(ftx, from_=5, to=600, textvariable=self.var_tx_max, width=5).grid(
             row=1, column=1, sticky="e")
-        ttk.Label(ftx, foreground="#888", wraplength=430,
+        ttk.Label(ftx, foreground=C_SUAVE, wraplength=430,
                   text="El G1M transmite señal solo con audio en SSB/AM (micrófono) o con la llave en CW. "
                        "El PTT por CAT conmuta a transmisión pero no genera portadora por sí mismo.").grid(
             row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
@@ -414,9 +431,9 @@ class Panel:
 
         ttk.Button(aj, text="Leer ajustes del radio", command=self.leer_ajustes).grid(
             row=fila + 2, column=0, columnspan=2, sticky="w", pady=6)
-        ttk.Label(aj, foreground="#888", wraplength=430,
-                  text="El G1M V1.07 contesta a todos los ajustes, pero no todos tienen efecto real. "
-                       "Mira el registro de abajo y la pantalla del radio para ver cuáles funcionan.").grid(
+        ttk.Label(aj, foreground=C_SUAVE, wraplength=430,
+                  text="Volumen, ganancia RF, squelch y atenuador no se pueden controlar por CAT en el "
+                       "G1M: se ajustan con los mandos del radio.").grid(
             row=fila + 3, column=0, columnspan=3, sticky="w")
 
     def _construir_memorias(self, padre):
@@ -424,7 +441,7 @@ class Panel:
         fm.grid(row=0, column=1, sticky="nsew")
         fm.rowconfigure(0, weight=1)
         fm.columnconfigure(0, weight=1)
-        self.lst_mem = tk.Listbox(fm, bg="#0f1115", fg=C_TEXTO, selectbackground="#4a6fa5",
+        self.lst_mem = tk.Listbox(fm, bg=C_CAMPO, fg=C_TEXTO, selectbackground=C_SEL, selectforeground="white",
                                   font=("Consolas", 10), activestyle="none")
         self.lst_mem.grid(row=0, column=0, columnspan=3, sticky="nsew")
         self.lst_mem.bind("<Double-Button-1>", lambda e: self._mem_recuperar())
@@ -501,7 +518,7 @@ class Panel:
         cfg = self._config()
         preferido = (cfg.get("baudios"), cfg.get("direccion")) if cfg.get("puerto") == nombre else None
         self.bt_conectar.configure(state="disabled")
-        self.lb_estado.configure(text=f"Buscando el radio en {nombre}...", foreground="#ffd479")
+        self.lb_estado.configure(text=f"Buscando el radio en {nombre}...", foreground=C_AVISO)
 
         def buscar():
             try:
@@ -514,7 +531,7 @@ class Panel:
     def _conexion_lista(self, nombre, r):
         self.bt_conectar.configure(state="normal")
         if isinstance(r, Exception) or r is None:
-            self.lb_estado.configure(text="Desconectado", foreground="#ff8080")
+            self.lb_estado.configure(text="Desconectado", foreground=C_ERROR)
             if r is None:
                 messagebox.showwarning("G1M", f"No se encontró el radio en {nombre}.\n\n"
                                        "Comprueba que esté encendido, que el cable vaya al puerto COMM "
@@ -532,7 +549,7 @@ class Panel:
         self.enlace.start()
         self.freq = f
         self._pintar_freq()
-        self.lb_estado.configure(text=f"Conectado a {nombre}", foreground="#7fd97f")
+        self.lb_estado.configure(text=f"Conectado a {nombre}", foreground=C_OK)
         self.bt_conectar.configure(text="Desconectar")
         self.log(f"Conectado en {nombre} ({baudios} baudios, dirección 0x{direccion:02X}). "
                  f"Frecuencia {f / 1e6:.6f} MHz")
@@ -543,7 +560,7 @@ class Panel:
             self.ptt(False)
         self.enlace.detener()
         self.enlace = None
-        self.lb_estado.configure(text="Desconectado", foreground="#ff8080")
+        self.lb_estado.configure(text="Desconectado", foreground=C_ERROR)
         self.bt_conectar.configure(text="Conectar")
         self.log("Desconectado.")
 
@@ -596,10 +613,14 @@ class Panel:
 
     def _ir_a(self, _evento=None):
         try:
-            self.poner_freq(float(self.var_entrada.get().replace(",", ".")) * 1e6)
-            self.var_entrada.set("")
+            v = float(self.var_entrada.get().strip().replace(",", "."))
         except ValueError:
-            self.log("Frecuencia no válida. Escríbela en MHz, por ejemplo 7.074")
+            self.log("Frecuencia no válida. Escríbela en MHz (7.074) o en kHz (7074)")
+            return
+        # 7.074 -> MHz; 7074 -> kHz; 7074000 -> Hz
+        hz = v * 1e6 if v < 1000 else v * 1e3 if v < 100_000 else v
+        self.poner_freq(hz)
+        self.var_entrada.set("")
 
     def _banda(self, nombre, f_defecto):
         actual = next((n for n, f in BANDAS if abs(f - self.freq) < 600_000), None)
@@ -613,17 +634,17 @@ class Panel:
         cv = self.cv_dial
         cv.delete("all")
         cx = cy = 85
-        cv.create_oval(8, 8, 162, 162, fill="#2a2f39", outline="#3d4556", width=3)
-        cv.create_oval(28, 28, 142, 142, fill="#20242c", outline="#11141a", width=2)
+        cv.create_oval(8, 8, 162, 162, fill="#dfe5ec", outline="#aab6c5", width=3)
+        cv.create_oval(28, 28, 142, 142, fill="#f4f6f9", outline="#c3cdd9", width=2)
         for i in range(36):
             a = math.radians(i * 10)
             r1, r2 = (66, 76) if i % 3 == 0 else (70, 76)
             cv.create_line(cx + r1 * math.cos(a), cy + r1 * math.sin(a),
-                           cx + r2 * math.cos(a), cy + r2 * math.sin(a), fill="#5c6678")
+                           cx + r2 * math.cos(a), cy + r2 * math.sin(a), fill="#8a96a6")
         a = self.dial_angulo
         x, y = cx + 45 * math.cos(a), cy + 45 * math.sin(a)
         cv.create_oval(x - 9, y - 9, x + 9, y + 9, fill=C_DIGITO, outline="")
-        cv.create_text(cx, cy, text="DIAL", fill="#5c6678", font=("Segoe UI", 9, "bold"))
+        cv.create_text(cx, cy, text="DIAL", fill="#8a96a6", font=("Segoe UI", 9, "bold"))
 
     def _dial_inicio(self, evento):
         self._dial_prev = math.atan2(evento.y - 85, evento.x - 85)
@@ -668,6 +689,9 @@ class Panel:
         var, lb = self.escalas[sub]
         valor = int(float(var.get()))
         lb.configure(text=str(valor))
+        if self.ultimo_nivel.get(sub) == valor:
+            return
+        self.ultimo_nivel[sub] = valor
         if self.enlace:
             self._retrasar(("nivel", sub), 150, lambda: self.enlace and self.enlace.trabajo(
                 f"{nombre} {valor}", self.enlace.civ.poner_nivel, sub, valor))
@@ -730,7 +754,7 @@ class Panel:
 
     def _pintar_tx(self, tx):
         self.lb_tx.configure(text="  TX  " if tx else "  RX  ", bg=C_TX if tx else C_RX)
-        self.bt_ptt.configure(bg=C_TX if tx else "#5a2226", relief="sunken" if tx else "raised")
+        self.bt_ptt.configure(bg=C_TX if tx else C_PTT, fg="white" if tx else C_TX, relief="sunken" if tx else "raised")
 
     def _vigilar_tx(self):
         if self.en_tx and time.monotonic() - self.tx_desde > max(5, self.var_tx_max.get()):
@@ -831,12 +855,12 @@ class Panel:
             return
         valor = max(0, min(241, valor))
         ancho = int(260 * valor / 241)
-        cv.create_rectangle(0, 0, ancho, 18, fill="#2e9e4f" if valor <= 120 else "#e0353b", outline="")
+        cv.create_rectangle(0, 0, ancho, 18, fill="#7cc48f" if valor <= 120 else "#f08a8a", outline="")
         if valor <= 120:
             texto = f"S{round(valor / 120 * 9)}"
         else:
             texto = f"S9+{round((valor - 120) / 121 * 60)}"
-        cv.create_text(130, 9, text=texto, fill="white", font=("Segoe UI", 9, "bold"))
+        cv.create_text(130, 9, text=texto, fill=C_TEXTO, font=("Segoe UI", 9, "bold"))
 
     def _aplicar_ajustes(self, d):
         for sub, valor in d["niveles"].items():
@@ -844,6 +868,7 @@ class Panel:
                 var, lb = self.escalas[sub]
                 var.set(min(255, valor))
                 lb.configure(text=str(min(255, valor)))
+                self.ultimo_nivel[sub] = min(255, valor)
         for cmd, valor in d["interruptores"].items():
             if valor is not None and cmd in self.vars_interruptor:
                 self.vars_interruptor[cmd][0].set(valor != 0)
