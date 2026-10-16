@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Panel de control del Xiegu G1M por CAT (CI-V) con ventana.
+Versión 1.0.0 – EA4HCJ
 
 Necesita g1m_cat.py en la misma carpeta y pyserial.
 
@@ -57,6 +58,10 @@ INTERRUPTORES = [
     ("Reducción ruido", b"\x16\x40", 0x01),
     ("Break-in CW", b"\x16\x47", 0x01),
 ]
+
+VERSION = "1.0.0"
+AUTOR = "EA4HCJ"
+REPOSITORIO = "https://github.com/alfonsorobaina/CAT_CONTROL_RADIO_XIEGU_G1M"
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 ARCHIVO_MEMORIAS = os.path.join(CARPETA, "g1m_memorias.json")
@@ -220,7 +225,19 @@ class Enlace(threading.Thread):
         self.ultima_sintonia = time.monotonic()
 
     def trabajo(self, descripcion, funcion, *args):
+        # Una frecuencia pedida antes que esta orden debe llegar antes al radio
+        # (por ejemplo, sintonizar el VFO A y enseguida cambiar al VFO B).
+        with self.cerrojo:
+            f, self.freq_pendiente = self.freq_pendiente, None
+        if f is not None:
+            self.trabajos.put((None, self._poner_freq, (f,)))
         self.trabajos.put((descripcion, funcion, args))
+
+    def _poner_freq(self, f):
+        ok = self.civ.poner_freq(f)
+        if ok is not True:
+            self.salida.put(("log", f"Frecuencia {fmt_freq(f)}: {cat.resultado(ok)}"))
+        return ok
 
     def detener(self):
         self.activo = False
@@ -228,15 +245,18 @@ class Enlace(threading.Thread):
     def run(self):
         ultimo_sondeo = 0.0
         while self.activo:
-            with self.cerrojo:
-                f, self.freq_pendiente = self.freq_pendiente, None
-            if f is not None:
-                ok = self.civ.poner_freq(f)
-                if ok is not True:
-                    self.salida.put(("log", f"Frecuencia {fmt_freq(f)}: {cat.resultado(ok)}"))
-                continue
+            # Primero las órdenes en cola (en orden); luego la última frecuencia pedida.
             try:
-                descripcion, funcion, args = self.trabajos.get(timeout=0.04)
+                trabajo = self.trabajos.get_nowait()
+            except queue.Empty:
+                trabajo = None
+                with self.cerrojo:
+                    f, self.freq_pendiente = self.freq_pendiente, None
+                if f is not None:
+                    self._poner_freq(f)
+                    continue
+            try:
+                descripcion, funcion, args = trabajo or self.trabajos.get(timeout=0.04)
                 try:
                     r = funcion(*args)
                 except Exception as e:  # el puerto se cayó, cable suelto, etc.
@@ -293,7 +313,7 @@ class Panel:
         self.ultima_por_banda = {}
         self.retardos = {}
 
-        raiz.title("Xiegu G1M – Control CAT")
+        raiz.title(f"Xiegu G1M – Control CAT  v{VERSION}  ·  {AUTOR}")
         try:
             self.iconos = [tk.PhotoImage(data=ICONO_64), tk.PhotoImage(data=ICONO_32)]
             raiz.iconphoto(True, *self.iconos)
@@ -359,6 +379,7 @@ class Panel:
         self.lb_tx = tk.Label(barra, text="  RX  ", bg=C_RX, fg="white",
                               font=("Segoe UI", 12, "bold"))
         self.lb_tx.pack(side="right", padx=6)
+        ttk.Button(barra, text="Acerca de", command=self.acerca_de).pack(side="right")
         ttk.Button(barra, text="Registro", command=self.abrir_registro).pack(side="right", padx=6)
 
         # Zona superior: frecuencia + dial
@@ -382,6 +403,7 @@ class Panel:
         self.ventana_registro = None
         self.lb_ultimo = ttk.Label(r, text="", foreground=C_SUAVE, padding=(8, 4))
         self.lb_ultimo.grid(row=3, column=0, sticky="ew")
+        self.lb_ultimo.configure(text=f"Xiegu G1M Control CAT v{VERSION} · {AUTOR} · elige el puerto y pulsa Conectar")
 
     def _construir_frecuencia(self, padre):
         marco = tk.Frame(padre, bg=C_LCD, bd=1, relief="solid", highlightbackground="#b8c6d8")
@@ -650,6 +672,14 @@ class Panel:
             self.txt_registro.insert("end", linea + "\n")
             self.txt_registro.see("end")
             self.txt_registro.configure(state="disabled")
+
+    def acerca_de(self):
+        messagebox.showinfo(
+            "Acerca de",
+            f"Xiegu G1M – Control CAT\nVersión {VERSION}\n\n"
+            f"Desarrollado por {AUTOR}\n\n"
+            "Control por CI-V (protocolo Icom) a través del puerto COMM del G1M.\n\n"
+            f"{REPOSITORIO}")
 
     def abrir_registro(self):
         if self.ventana_registro:

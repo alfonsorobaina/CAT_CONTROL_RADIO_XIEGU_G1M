@@ -1,5 +1,7 @@
 # Xiegu G1M – Radio Control CAT
 
+**Versión 1.0.0** · Desarrollado por **EA4HCJ**
+
 Panel de control para PC del transceptor QRP **Xiegu G1M** por el puerto COMM (CAT, protocolo
 CI-V de Icom): frecuencia grande sintonizable con el ratón, dial, bandas, modos, VFO A/B,
 A = B, SPLIT, PTT con tiempo máximo, potencia, AGC y memorias.
@@ -74,3 +76,12 @@ lista y pulsar **Conectar**: la velocidad y la dirección CI-V se detectan solas
 Datos confirmados con el radio real: COM6, 19200 baudios, dirección 0x70. El modo solo se acepta
 con byte de filtro (`06 <modo> <filtro>`); los medidores de Po/ROE devuelven valores fijos; los
 comandos `17` (CW automático) y `27` (espectro) no responden.
+
+## Versiones
+
+- **1.0.0** – Primera versión: panel con frecuencia sintonizable con el ratón y dial, bandas,
+  modos con filtro, VFO A/B, A = B, B = A, A ↔ B, SPLIT con los dos VFO, PTT con tiempo máximo,
+  potencia, AGC, preamplificador, NB, NR, break-in, memorias con ejemplos QRP, detección
+  automática del puerto y de la dirección CI-V, y herramientas de sondeo (`g1m_cat.py`).
+
+73 de EA4HCJ

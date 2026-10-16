@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Control y sondeo CI-V para el transceptor Xiegu G1M por el puerto COMM.
+Versión 1.0.0 – EA4HCJ
 
 El firmware del G1M viene cifrado (AES por bloques de 16 bytes), así que el
 protocolo no se puede leer del archivo .xgf: se descubre preguntándole al radio.
