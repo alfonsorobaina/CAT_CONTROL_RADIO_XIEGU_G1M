@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+# Archivos que el programa crea en cada PC
+g1m_config.json
+g1m_memorias.json
+g1m_sondeo_*.json
+g1m_portadora_*.json
